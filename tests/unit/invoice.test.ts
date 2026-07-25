@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
+  clampDayValue,
+  clampMonthValue,
+  daysInMonth,
+  formatMoney,
   fromSales,
   fromSalesByMode,
   fromTotal,
@@ -15,8 +19,8 @@ import {
   toChineseUpper,
   upperDigits,
   withTaxOverride,
-} from './invoice'
-import type { InvoiceItem } from '../types'
+} from '../../src/lib/invoice'
+import type { InvoiceItem } from '../../src/types'
 
 function item(overrides: Partial<InvoiceItem> = {}): InvoiceItem {
   return { name: '', quantity: null, unitPrice: null, amount: null, note: '', ...overrides }
@@ -81,6 +85,33 @@ describe('normalizeMoney（金額欄位正規化：整數元、非負）', () =>
     expect(normalizeMoney(NaN)).toBe(0)
     expect(normalizeMoney(Infinity)).toBe(0)
     expect(normalizeMoney(-Infinity)).toBe(0)
+  })
+})
+
+describe('formatMoney（金額顯示千分位，ui-spec.md「金額千分位」）', () => {
+  it.each<[number | null, string]>([
+    [0, '0'],
+    [100, '100'],
+    [999, '999'],
+    [1000, '1,000'],
+    [10500, '10,500'],
+    [999999999, '999,999,999'],
+    [1234.5, '1,234.5'],
+    [-500, '-500'],
+    [null, ''],
+  ])('%s → %s', (input, expected) => {
+    expect(formatMoney(input)).toBe(expected)
+  })
+
+  it('非有限數（NaN／Infinity）回傳空字串', () => {
+    expect(formatMoney(NaN)).toBe('')
+    expect(formatMoney(Infinity)).toBe('')
+    expect(formatMoney(-Infinity)).toBe('')
+  })
+
+  it('只在整數部分加千分位，小數部分原樣保留（不四捨五入、不補零）', () => {
+    expect(formatMoney(1234567.89)).toBe('1,234,567.89')
+    expect(formatMoney(-1234.5)).toBe('-1,234.5')
   })
 })
 
@@ -259,5 +290,91 @@ describe('rowAmount / rowsTotal（手動覆寫優先）', () => {
         item({ amount: 50 }), // 純覆寫 50
       ]),
     ).toBe(550)
+  })
+})
+
+describe('daysInMonth（民國日期日期合法性驗證）', () => {
+  it('平年二月 28 日、閏年二月 29 日（民國 113 = 2024 閏年、114 = 2025 平年）', () => {
+    expect(daysInMonth(113, 2)).toBe(29)
+    expect(daysInMonth(114, 2)).toBe(28)
+  })
+
+  it('世紀年判斷：2000 為閏年、1900 非閏年（400 的倍數例外）', () => {
+    expect(daysInMonth(89, 2)).toBe(29) // 89 + 1911 = 2000
+    expect(daysInMonth(-11, 2)).toBe(28) // -11 + 1911 = 1900
+  })
+
+  it('大小月固定天數，與年份無關', () => {
+    expect(daysInMonth(113, 1)).toBe(31)
+    expect(daysInMonth(113, 4)).toBe(30)
+    expect(daysInMonth(113, 12)).toBe(31)
+    expect(daysInMonth(114, 4)).toBe(30)
+  })
+
+  it('月份為 null 時上限以 31 計', () => {
+    expect(daysInMonth(114, null)).toBe(31)
+    expect(daysInMonth(null, null)).toBe(31)
+  })
+
+  it('月份超出 1～12 範圍視同未填，上限以 31 計', () => {
+    expect(daysInMonth(114, 0)).toBe(31)
+    expect(daysInMonth(114, 13)).toBe(31)
+    expect(daysInMonth(114, NaN)).toBe(31)
+  })
+
+  it('年份為 null 或非法值時二月視為平年（28 日）', () => {
+    expect(daysInMonth(null, 2)).toBe(28)
+    expect(daysInMonth(NaN, 2)).toBe(28)
+  })
+})
+
+describe('clampMonthValue（民國日期「月」夾值：1～12）', () => {
+  it('未填（null）維持 null', () => {
+    expect(clampMonthValue(null)).toBeNull()
+  })
+
+  it('超出上限夾到 12，低於下限夾到 1', () => {
+    expect(clampMonthValue(13)).toBe(12)
+    expect(clampMonthValue(99)).toBe(12)
+    expect(clampMonthValue(0)).toBe(1)
+  })
+
+  it('範圍內原值不變', () => {
+    expect(clampMonthValue(1)).toBe(1)
+    expect(clampMonthValue(12)).toBe(12)
+    expect(clampMonthValue(7)).toBe(7)
+  })
+})
+
+describe('clampDayValue（民國日期「日」夾值：1～該月天數）', () => {
+  it('未填（null）維持 null', () => {
+    expect(clampDayValue(null, 113, 8)).toBeNull()
+  })
+
+  it('8 月 32 日 → 夾成 8 月 31 日（不存在的日期）', () => {
+    expect(clampDayValue(32, 113, 8)).toBe(31)
+  })
+
+  it('月改為 2 後，日 31 要跟著夾到該年二月上限（閏年 29、平年 28）', () => {
+    expect(clampDayValue(31, 113, 2)).toBe(29)
+    expect(clampDayValue(31, 114, 2)).toBe(28)
+  })
+
+  it('年由閏年改為平年後，日 29 要跟著夾成 28', () => {
+    expect(clampDayValue(29, 114, 2)).toBe(28)
+  })
+
+  it('低於下限（0）夾到 1', () => {
+    expect(clampDayValue(0, 113, 8)).toBe(1)
+  })
+
+  it('月份未填時上限以 31 計', () => {
+    expect(clampDayValue(31, 113, null)).toBe(31)
+    expect(clampDayValue(32, 113, null)).toBe(31)
+  })
+
+  it('年份為 null 或非法值時仍可夾值（二月視為平年）', () => {
+    expect(clampDayValue(29, null, 2)).toBe(28)
+    expect(clampDayValue(29, NaN, 2)).toBe(28)
   })
 })

@@ -44,7 +44,9 @@ src/
   App.vue                     狀態中樞：發票類型、買受人、品項、金額與所有計算連動
   components/InvoiceSheet.vue 整張發票的版面與欄位（紙本樣式，scoped CSS）
   lib/invoice.ts              純函式：稅額拆分、金額正規化、中文大寫轉換
-e2e/invoice.spec.ts           端對端測試
+tests/
+  unit/                       單元／元件測試（Vitest）：invoice、InvoiceSheet、App
+  e2e/invoice.spec.ts         端對端測試（Playwright）
 docs/PRD.md                   產品需求
 docs/ui-spec.md               版面規格（改 UI 前請先讀）
 ```

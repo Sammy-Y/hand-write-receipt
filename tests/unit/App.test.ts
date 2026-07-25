@@ -1,7 +1,7 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
-import App from './App.vue'
-import { periodStartMonth, rocYear } from './lib/invoice'
+import App from '../../src/App.vue'
+import { periodStartMonth, rocYear } from '../../src/lib/invoice'
 
 type Wrapper = ReturnType<typeof mount>
 
@@ -103,10 +103,10 @@ describe('App（三聯式：品項合計視為未稅銷售額）', () => {
     const wrapper = mount(App)
     await fillItem(wrapper, 0, '2', '5000')
 
-    expect(inputValue(wrapper, 'item-amount-0')).toBe('10000')
-    expect(inputValue(wrapper, 'sales-input')).toBe('10000')
+    expect(inputValue(wrapper, 'item-amount-0')).toBe('10,000')
+    expect(inputValue(wrapper, 'sales-input')).toBe('10,000')
     expect(inputValue(wrapper, 'tax-input')).toBe('500')
-    expect(inputValue(wrapper, 'total-input')).toBe('10500')
+    expect(inputValue(wrapper, 'total-input')).toBe('10,500')
     expect(upperSlots(wrapper)).toEqual([
       '億',
       '仟',
@@ -126,9 +126,9 @@ describe('App（三聯式：品項合計視為未稅銷售額）', () => {
     await wrapper.find('[data-testid="item-amount-1"]').setValue('300')
     await wrapper.find('[data-testid="item-amount-2"]').setValue('500')
 
-    expect(inputValue(wrapper, 'sales-input')).toBe('1000')
+    expect(inputValue(wrapper, 'sales-input')).toBe('1,000')
     expect(inputValue(wrapper, 'tax-input')).toBe('50')
-    expect(inputValue(wrapper, 'total-input')).toBe('1050')
+    expect(inputValue(wrapper, 'total-input')).toBe('1,050')
   })
 
   it('改數量清除該列金額覆寫，回到自動計算', async () => {
@@ -148,18 +148,18 @@ describe('App（三聯式：金額區雙向計算）', () => {
     const wrapper = mount(App)
     await wrapper.find('[data-testid="total-input"]').setValue('10500')
 
-    expect(inputValue(wrapper, 'sales-input')).toBe('10000')
+    expect(inputValue(wrapper, 'sales-input')).toBe('10,000')
     expect(inputValue(wrapper, 'tax-input')).toBe('500')
   })
 
   it('稅額手動覆寫 → 總計 = 銷售額 + 稅，銷售額不動', async () => {
     const wrapper = mount(App)
     await wrapper.find('[data-testid="sales-input"]').setValue('10000')
-    expect(inputValue(wrapper, 'total-input')).toBe('10500')
+    expect(inputValue(wrapper, 'total-input')).toBe('10,500')
 
     await wrapper.find('[data-testid="tax-input"]').setValue('600')
-    expect(inputValue(wrapper, 'sales-input')).toBe('10000')
-    expect(inputValue(wrapper, 'total-input')).toBe('10600')
+    expect(inputValue(wrapper, 'sales-input')).toBe('10,000')
+    expect(inputValue(wrapper, 'total-input')).toBe('10,600')
   })
 
   it('切零稅率 → 稅額歸 0、總計 = 銷售額；切回應稅重算', async () => {
@@ -170,11 +170,11 @@ describe('App（三聯式：金額區雙向計算）', () => {
     await wrapper.find('[data-testid="tax-mode-zero"]').trigger('click')
     expect(wrapper.find('[data-testid="tax-mode-zero"]').text()).toBe('✓')
     expect(inputValue(wrapper, 'tax-input')).toBe('')
-    expect(inputValue(wrapper, 'total-input')).toBe('1000')
+    expect(inputValue(wrapper, 'total-input')).toBe('1,000')
 
     await wrapper.find('[data-testid="tax-mode-taxable"]').trigger('click')
     expect(inputValue(wrapper, 'tax-input')).toBe('50')
-    expect(inputValue(wrapper, 'total-input')).toBe('1050')
+    expect(inputValue(wrapper, 'total-input')).toBe('1,050')
   })
 })
 
@@ -184,19 +184,19 @@ describe('App（二聯式：品項合計視為含稅總計）', () => {
     await wrapper.find('[data-testid="tab-duplicate"]').trigger('click')
     await fillItem(wrapper, 0, '1', '1050')
 
-    expect(inputValue(wrapper, 'total-input')).toBe('1050')
+    expect(inputValue(wrapper, 'total-input')).toBe('1,050')
     expect(wrapper.find('[data-testid="tax-readonly"]').text()).toContain('50')
-    expect(wrapper.find('[data-testid="sales-readonly"]').text()).toContain('1000')
+    expect(wrapper.find('[data-testid="sales-readonly"]').text()).toContain('1,000')
   })
 
   it('三聯式切到二聯式時以品項合計重算為含稅', async () => {
     const wrapper = mount(App)
     await fillItem(wrapper, 0, '1', '1050')
-    expect(inputValue(wrapper, 'total-input')).toBe('1103') // 未稅 1050 + 稅 53
+    expect(inputValue(wrapper, 'total-input')).toBe('1,103') // 未稅 1050 + 稅 53
 
     await wrapper.find('[data-testid="tab-duplicate"]').trigger('click')
-    expect(inputValue(wrapper, 'total-input')).toBe('1050')
-    expect(wrapper.find('[data-testid="sales-readonly"]').text()).toContain('1000')
+    expect(inputValue(wrapper, 'total-input')).toBe('1,050')
+    expect(wrapper.find('[data-testid="sales-readonly"]').text()).toContain('1,000')
   })
 })
 
@@ -209,7 +209,7 @@ describe('App（金額一律整數元：小數不留浮點雜訊、大寫九格�
     const wrapper = mount(App)
     await wrapper.find('[data-testid="total-input"]').setValue('999.99')
 
-    expect(inputValue(wrapper, 'total-input')).toBe('1000')
+    expect(inputValue(wrapper, 'total-input')).toBe('1,000')
     expect(inputValue(wrapper, 'sales-input')).toBe('952')
     expect(inputValue(wrapper, 'tax-input')).toBe('48')
     expect(upperSlots(wrapper).slice(5)).toEqual(['壹仟', '零佰', '零拾', '零元'])
@@ -228,9 +228,9 @@ describe('App（金額一律整數元：小數不留浮點雜訊、大寫九格�
     expect(inputValue(wrapper, 'total-input')).toBe('33')
 
     await wrapper.find('[data-testid="sales-input"]').setValue('1000.5')
-    expect(inputValue(wrapper, 'sales-input')).toBe('1001')
+    expect(inputValue(wrapper, 'sales-input')).toBe('1,001')
     expect(inputValue(wrapper, 'tax-input')).toBe('50')
-    expect(inputValue(wrapper, 'total-input')).toBe('1051')
+    expect(inputValue(wrapper, 'total-input')).toBe('1,051')
 
     await wrapper.find('[data-testid="item-amount-0"]').setValue('100.5')
     expect(inputValue(wrapper, 'item-amount-0')).toBe('101')
@@ -246,7 +246,7 @@ describe('App（金額一律整數元：小數不留浮點雜訊、大寫九格�
     await wrapper.find('[data-testid="tax-input"]').setValue('50.5')
 
     expect(inputValue(wrapper, 'tax-input')).toBe('51')
-    expect(inputValue(wrapper, 'total-input')).toBe('1051')
+    expect(inputValue(wrapper, 'total-input')).toBe('1,051')
   })
 })
 
@@ -270,14 +270,14 @@ describe('App（負數不進入金額區）', () => {
     await wrapper.find('[data-testid="sales-input"]').setValue('1000')
     await wrapper.find('[data-testid="tax-input"]').setValue('-9999')
     expect(inputValue(wrapper, 'tax-input')).toBe('')
-    expect(inputValue(wrapper, 'sales-input')).toBe('1000')
-    expect(inputValue(wrapper, 'total-input')).toBe('1000')
+    expect(inputValue(wrapper, 'sales-input')).toBe('1,000')
+    expect(inputValue(wrapper, 'total-input')).toBe('1,000')
   })
 
   it('列金額填負數 → 該列顯示 0（不顯示 -500），金額區不出現負值', async () => {
     const wrapper = mount(App)
     await wrapper.find('[data-testid="item-amount-0"]').setValue('1000')
-    expect(inputValue(wrapper, 'sales-input')).toBe('1000')
+    expect(inputValue(wrapper, 'sales-input')).toBe('1,000')
 
     await wrapper.find('[data-testid="item-amount-0"]').setValue('-500')
 
@@ -286,8 +286,8 @@ describe('App（負數不進入金額區）', () => {
       expect(inputValue(wrapper, testid).startsWith('-')).toBe(false)
     }
     // 合計歸零時不覆蓋既有金額（ui-spec.md §3）
-    expect(inputValue(wrapper, 'sales-input')).toBe('1000')
-    expect(inputValue(wrapper, 'total-input')).toBe('1050')
+    expect(inputValue(wrapper, 'sales-input')).toBe('1,000')
+    expect(inputValue(wrapper, 'total-input')).toBe('1,050')
   })
 })
 
@@ -305,7 +305,7 @@ describe('App（二聯式沒有稅制欄位 → 切過去時稅制回應稅）',
 
     await wrapper.find('[data-testid="total-input"]').setValue('2000')
     expect(wrapper.find('[data-testid="tax-readonly"]').text()).toBe('內含稅額 $95')
-    expect(wrapper.find('[data-testid="sales-readonly"]').text()).toBe('銷售額 $1905')
+    expect(wrapper.find('[data-testid="sales-readonly"]').text()).toBe('銷售額 $1,905')
   })
 
   it('切回三聯式時稅制顯示為應稅（✓ 在應稅格）', async () => {

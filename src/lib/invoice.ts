@@ -44,6 +44,21 @@ export function normalizeMoney(n: number): number {
   return Math.round(n)
 }
 
+/**
+ * 金額顯示千分位格式化（ui-spec.md「金額千分位」）：整數部分每三位加一個逗號，
+ * 小數部分（單價允許小數）原樣保留在小數點後，不四捨五入、不補零。
+ * null 或非有限數（欄位未填／非法值）回傳空字串——是否要因為「留白」而顯示空白
+ * 由呼叫端決定（例如列金額被明確覆寫為 0 時仍要顯示 "0"，本函式對 0 也回傳 "0"）。
+ */
+export function formatMoney(n: number | null): string {
+  if (n === null || !Number.isFinite(n)) return ''
+  const negative = n < 0
+  const [intPart, decPart] = String(Math.abs(n)).split('.')
+  const withComma = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+  const sign = negative ? '-' : ''
+  return decPart ? `${sign}${withComma}.${decPart}` : `${sign}${withComma}`
+}
+
 /** 依稅制由銷售額往下算：應稅課 5%，零稅率／免稅稅額為 0（總計 = 銷售額） */
 export function fromSalesByMode(sales: number, mode: TaxMode): TaxBreakdown {
   if (mode === 'taxable') return fromSales(sales)
@@ -181,4 +196,55 @@ export function periodStartMonth(month: number): number {
   const m = Math.trunc(month)
   if (!Number.isFinite(m) || m < 1 || m > 12) return 1
   return m % 2 === 0 ? m - 1 : m
+}
+
+const DAYS_IN_MONTH = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+
+/**
+ * 民國年是否為西元閏年（西元 = 民國 + 1911）。
+ * 年份為 null 或非法值（非有限數）時視為平年（Feb 上限 28），
+ * 因為沒有年份資訊時無法判斷是否閏年，保守回傳平年上限。
+ */
+function isRocLeapYear(rocYear: number | null): boolean {
+  if (rocYear === null) return false
+  const y = Math.trunc(rocYear)
+  if (!Number.isFinite(y)) return false
+  const gregorian = y + 1911
+  return (gregorian % 4 === 0 && gregorian % 100 !== 0) || gregorian % 400 === 0
+}
+
+/**
+ * 民國日期「年、月」→ 該月天數上限（用於驗證日期合法性，ui-spec §2 民國日期行）。
+ * - 月份為 null 或不在 1～12（超出範圍）時，上限以 31 計。
+ * - 二月依民國年換算西元年判斷閏年，回傳 28 或 29；年份為 null 或非法值時視為平年（28）。
+ * - 其餘月份依大小月固定天數，年份不影響。
+ */
+export function daysInMonth(rocYear: number | null, month: number | null): number {
+  if (month === null) return 31
+  const m = Math.trunc(month)
+  if (!Number.isFinite(m) || m < 1 || m > 12) return 31
+  if (m === 2) return isRocLeapYear(rocYear) ? 29 : 28
+  return DAYS_IN_MONTH[m - 1]
+}
+
+/** 民國日期「月」輸入值夾到 1～12；未填（null）維持 null */
+export function clampMonthValue(month: number | null): number | null {
+  if (month === null || !Number.isFinite(month)) return null
+  const m = Math.trunc(month)
+  return Math.min(12, Math.max(1, m))
+}
+
+/**
+ * 民國日期「日」輸入值依（可能剛變動的）年、月夾到 1～該月天數；未填（null）維持 null。
+ * 用於「日超出即夾到該月天數上限」與「改月份／年份後既有日跟著夾」（ui-spec §2 民國日期行）。
+ */
+export function clampDayValue(
+  day: number | null,
+  rocYear: number | null,
+  month: number | null,
+): number | null {
+  if (day === null || !Number.isFinite(day)) return null
+  const max = daysInMonth(rocYear, month)
+  const d = Math.trunc(day)
+  return Math.min(max, Math.max(1, d))
 }

@@ -25,7 +25,13 @@
 3. **買受人資訊區**（表格上方，左對齊，底線式輸入框）：
    - 「買 受 人：」input（`buyer-name-input`）
    - 「統一編號：」input（8 碼、`inputmode="numeric"`、`ubn-input`）——僅三聯式。
-   - **民國日期行**：「中 華 民 國 [年 input] 年 [月 input] 月 [日 input] 日」——**年／月／日三格全部由使用者填**（`date-year-input`、`date-month-input`、`date-day-input`；年預設當年民國年、月日預設空白，皆可改）。此行**水平置中**於發票紙張寬度（比參考圖更靠中間，不要貼右）；與統一編號同一視覺列時，統編靠左、日期置中，兩者不重疊（窄螢幕可讓日期行獨立成行仍保持置中）。
+   - **民國日期行**：「中 華 民 國 [年 input] 年 [月 input] 月 [日 input] 日」——**年／月／日三格全部由使用者填**（`date-year-input`、`date-month-input`、`date-day-input`；年預設當年民國年、月日預設空白，皆可改）。
+     - **日期合法性驗證（2026-07-25 新增，推翻先前「不驗證日期」的決定）**：不得出現不存在的日期（例如 8 月 32 日）。
+       - 月只接受 1～12，超出即夾到 12。
+       - 日只接受 1～該月天數，超出即夾到上限；天數依**民國年換算西元年**（西元 = 民國 + 1911）判斷閏年，二月為 28 或 29 日。月份未填時上限以 31 計。
+       - 修改月份或年份後，若現有的日已超出新的上限，日要**跟著夾到上限**（例：日 31、月改成 2 → 28 或 29；日 29、年由閏年改為平年 → 28）。
+       - 夾值後必須把結果**同步寫回畫面**（沿用金額欄同樣的回寫做法），否則畫面會殘留使用者打的無效值。
+       - 期別年份不受此規則影響（僅維持 3 碼數字限制）。此行**水平置中**於發票紙張寬度（比參考圖更靠中間，不要貼右）；與統一編號同一視覺列時，統編靠左、日期置中，兩者不重疊（窄螢幕可讓日期行獨立成行仍保持置中）。
    - 「地　　址：」input（`buyer-address-input`）
 4. **主表格**（單一 `<table>`，`border-collapse`，外框 2px、內線 1px 同色）：
    - 表頭：品名（寬）｜數量｜單價｜金額｜備註（寬），寬字距。
@@ -43,6 +49,9 @@
      - **大寫數字（實際數值）必須在格內置中**（`justify-content: center`，數字＋單位整組居中，不貼齊格線左緣）。
      - **刻意保留的行為（2026-07-25 使用者確認，勿「修正」）**：數值貼齊各自的印刷單位字，因此金額位數少時整串會偏右、左側的億／仟／佰／拾／萬空著——這與紙本寫法一致，是刻意的。**不要**為了視覺平衡把數值整組置中、隱藏空的單位字，或在下方多加一行置中大字。
      - **大寫數字用不同顏色**與印刷單位字區隔：數字用「手寫墨」色（藍 `#1d4ed8` 一類，class 如 `.upper-digit`），單位字維持 olive 印刷色；數字字級可略大、字重略粗，方便照著抄。
+     - **空格以橫線槓掉（2026-07-25 新增）**：總計有值時，高於最高有效位、沒有大寫數字的格子（例如總計 3,570 時的億／仟／佰／拾／萬）要以一條**橫線劃掉**該格，這是紙本防止事後塗改金額的寫法。實作用 class（如 `.upper-slot--struck`）畫線，線色同 olive 印刷墨、橫貫該格；印刷單位字仍需看得見（不要蓋掉或隱藏）。
+       - **總計為 0 或空白時九格一律不劃線**（空白表單不該滿排橫線）。
+       - 此規則與上一條「不要隱藏空的單位字」並不衝突：格子與單位字都保留，只是多一條槓掉的線。
 6. **註腳**（框內最下）：左小字「※應稅、零稅率、免稅之銷售額應分別開立統一發票，並應於各該欄打「✓」。」；右「第一聯　存根聯」。
 
 ### 二聯式差異
@@ -67,13 +76,22 @@
 ## 4. 視覺
 
 - 紙張底色 cream（近 `#f5f3e7`）、墨色 olive（近 `#6b6414`），線與字同色；發票區塊配色固定（不隨深色主題變動）。
-- 輸入框透明底、無邊框，融入格線；focus 淡色 outline；數字靠右。金額顯示不加千分位（input 內為純數字）。
+- 輸入框透明底、無邊框，融入格線；focus 淡色 outline；數字靠右。
+
+### 金額千分位（2026-07-25 新增，推翻先前「不加千分位」的決定）
+
+- **加三位撇的欄位**：各列金額（`item-amount-N`）、單價（`item-price-N`）、銷售額（`sales-input`）、營業稅額（`tax-input`）、總計（`total-input`），以及二聯式框外的內含稅額／銷售額（`tax-readonly`／`sales-readonly`）。
+- **不加的欄位**：數量（`item-qty-N`，是計數不是金額）、期別年份與民國日期年月日。
+- **編輯中不加、離開欄位才加**：input 取得 focus 時顯示純數字（好編輯、游標不會亂跳），blur 後顯示千分位。使用者未在編輯的欄位（例如改總計後被連動更新的銷售額與稅額）一律顯示千分位。
+- 解析輸入時要先**剝除逗號**再交給 `normalizeMoney`，避免 `10,500` 被當成非數字歸零。
+- 單價允許小數，千分位只加在整數部分（`1,234.5`）。
+- 金額為 0 依紙本留白的規則不變；列金額被明確覆寫為 0 時仍顯示 `0`。
 - **不要**複製參考圖的浮水印、廠商 logo（利百代、No.100）。
 - RWD：發票區塊外層 `overflow-x-auto`、內容 `min-width` 約 640px——窄螢幕橫向捲動，**版面不重排**（跟紙一樣）。
 
 ## 5. data-testid 契約（e2e 與元件測試共用）
 
-`tab-triplicate`、`tab-duplicate`、`clear-button`、`period-year-input`、`period-month-select`、`buyer-name-input`、`ubn-input`、`buyer-address-input`、`date-year-input`、`date-month-input`、`date-day-input`、`item-name-N`、`item-qty-N`、`item-price-N`、`item-amount-N`、`item-note-0/1`、`sales-input`、`tax-input`、`total-input`、`tax-mode-taxable/zero/exempt`、`chinese-upper`、（大寫數字）`upper-digit-N`（N = 0～8，由億到元；僅在該位有數字時存在）、（二聯式框外）`tax-readonly`、`sales-readonly`。
+`tab-triplicate`、`tab-duplicate`、`clear-button`、`period-year-input`、`period-month-select`、`buyer-name-input`、`ubn-input`、`buyer-address-input`、`date-year-input`、`date-month-input`、`date-day-input`、`item-name-N`、`item-qty-N`、`item-price-N`、`item-amount-N`、`item-note-0/1`、`sales-input`、`tax-input`、`total-input`、`tax-mode-taxable/zero/exempt`、`chinese-upper`、（大寫數字）`upper-digit-N`（N = 0～8，由億到元；僅在該位有數字時存在）、（大寫空格橫線槓掉）`upper-struck-N`（N = 0～8；僅該格因高於最高有效位而被橫線槓掉時存在，總計為 0 或空白時不存在）、（二聯式框外）`tax-readonly`、`sales-readonly`。
 
 ## 6. 清除重填涵蓋範圍
 
@@ -81,7 +99,9 @@
 
 ## 7. 測試覆蓋範圍
 
-- `invoice.test.ts`：`upperDigits`（0、10500、100001、1e8、九位上限、非整數）、`rowAmount`／`rowsTotal`（覆寫優先）、`normalizeMoney`（負數／小數／NaN／Infinity）、`fromSalesByMode`／`fromTotalByMode`／`withTaxOverride`、恆等式全值域掃描。
-- `InvoiceSheet.test.ts`：固定 5 列、金額覆寫 emit 與 DOM 回寫、稅制 ✓ 切換、三聯／二聯列差異、大寫九格內容與顏色契約、期別下拉六選項、日期只收數字、textarea 自動增高與 ResizeObserver 行為、不 mutate props。
-- `App.test.ts`：雙向計算、稅額手動覆寫、零稅率歸零、小數與負數正規化、切二聯式回應稅、清除重填涵蓋範圍。
-- e2e：本節 testid 契約全覆蓋，另含長品名不截斷（含縮放視窗與放大字級）、外框 2px／內線 1px、375px 統編不被裁、tabs 鍵盤操作、操作全程無 console／page／window error。
+測試檔集中在 `tests/`：單元／元件測試在 `tests/unit/`（Vitest），端對端測試在 `tests/e2e/`（Playwright）。
+
+- `tests/unit/invoice.test.ts`：`upperDigits`（0、10500、100001、1e8、九位上限、非整數）、`rowAmount`／`rowsTotal`（覆寫優先）、`normalizeMoney`（負數／小數／NaN／Infinity）、`fromSalesByMode`／`fromTotalByMode`／`withTaxOverride`、恆等式全值域掃描、`formatMoney`（整數千分位、小數僅整數部分加逗號、負數、null／非有限數回空字串）、`daysInMonth`／`clampMonthValue`／`clampDayValue`（月份夾 1～12、日夾該月天數、二月依民國年換算西元年判斷閏年 28／29、年或月為 null 時的降級上限）。
+- `tests/unit/InvoiceSheet.test.ts`：固定 5 列、金額覆寫 emit 與 DOM 回寫、稅制 ✓ 切換、三聯／二聯列差異、大寫九格內容與顏色契約、大寫空格橫線槓掉（3570 → 前五格劃線後四格無、0 或空白不劃線）、期別下拉六選項、日期只收數字與合法性驗證（8/32 夾 8/31、換月換年連動重夾）、textarea 自動增高與 ResizeObserver 行為、不 mutate props；金額千分位（focus 顯示純數字、blur 顯示千分位、單價小數千分位只加整數部分、貼上含逗號字串正確解析）；單價編輯中保留使用者打到一半的小數點（不強制清成整數）；單價 `type="text"` 濾除字母等非數字字元、不因此被判為 `null` 而靜默清空（F3）。
+- `tests/unit/App.test.ts`：雙向計算、稅額手動覆寫、零稅率歸零、小數與負數正規化、切二聯式回應稅、清除重填涵蓋範圍。
+- `tests/e2e/invoice.spec.ts`：本節 testid 契約全覆蓋，另含長品名不截斷（含縮放視窗與放大字級）、外框 2px／內線 1px、375px 統編不被裁、tabs 鍵盤操作、大寫空格橫線槓掉的位置與 olive 線色量測、金額千分位 focus／blur 顯示切換、貼上含逗號金額字串解析、民國日期合法性驗證（8/32 夾 8/31、換月換年連動重夾）、**F1 迴歸：鍵盤 Tab 聚焦到已顯示千分位的列金額／單價欄後直接打字，斷言是取代而非附加**、操作全程無 console／page／window error。

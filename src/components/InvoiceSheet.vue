@@ -1,6 +1,14 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, type ObjectDirective } from 'vue'
-import { normalizeMoney, PERIOD_START_MONTHS, rowAmount, upperDigits } from '../lib/invoice'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, type ObjectDirective } from 'vue'
+import {
+  clampDayValue,
+  clampMonthValue,
+  formatMoney,
+  normalizeMoney,
+  PERIOD_START_MONTHS,
+  rowAmount,
+  upperDigits,
+} from '../lib/invoice'
 import type { Buyer, InvoiceItem, InvoiceType, TaxMode } from '../types'
 
 const props = defineProps<{
@@ -157,36 +165,210 @@ function parseNullable(raw: string): number | null {
 }
 
 /**
+ * 目前正在編輯中（已 focus、尚未 blur）的金額欄位暫存顯示字串，key 為
+ * `item-amount-N`／`item-price-N`／`sales`／`tax`／`total`。
+ * key 存在於此表示「編輯中」：顯示純數字（不含千分位）且逐鍵同步這裡的值，
+ * 千分位格式化只在 blur（或從未 focus 過，例如被連動更新的欄位）時套用——
+ * 否則使用者打字途中每個鍵盤事件都重新插入逗號，游標會亂跳，單價的小數點／
+ * 結尾字元也會被強制打斷（ui-spec.md「金額千分位」）。
+ */
+const drafts = reactive<Record<string, string>>({})
+
+/** 金額字串加千分位；空字串（紙本留白）維持空白 */
+function formatOrBlank(raw: string): string {
+  return raw === '' ? '' : formatMoney(Number(raw))
+}
+
+/**
  * 金額欄（列金額／銷售額／稅額／總計）值 → 整數元：
- * 小數四捨五入、負數與非法值視為 0（發票上不存在小數元或負金額）。
+ * 先剝除千分位逗號，小數四捨五入、負數與非法值視為 0（發票上不存在小數元或負金額）。
+ * 少了剝除逗號，使用者貼上「10,500」會被 Number() 判成 NaN 而被 normalizeMoney 歸零。
  */
 function parseMoney(raw: string): number {
-  return normalizeMoney(Number(raw))
+  return normalizeMoney(Number(raw.replace(/,/g, '')))
+}
+
+/** 銷售額／稅額／總計「純數字」值：0 依紙本留白規則不變 */
+function rawMoneyDisplay(v: number): string {
+  return v === 0 ? '' : String(v)
+}
+
+/** 銷售額／稅額／總計顯示：編輯中顯示純數字；否則（含被連動更新、從未 focus 過）顯示千分位 */
+function moneyDisplay(key: string, v: number): string {
+  if (key in drafts) return drafts[key]
+  return formatOrBlank(rawMoneyDisplay(v))
+}
+
+/**
+ * 三個 focus handler（金額／列金額／單價）共用：把 `el.value` 同步改寫成 `raw`
+ * （千分位格式「12,345」→ 純數字「12345」），並在改寫後把選取範圍設回「整段全選」。
+ *
+ * 原生 DOM 對 `el.value` 賦值一律會把選取範圍重置成游標收合在字尾——即使賦值前
+ * 已經是全選也一樣。一開始的作法是「賦值前記錄是否已為全選、賦值後只在原本就是
+ * 全選時才還原」，這對真實鍵盤 Tab 進入（瀏覽器在 focus 事件當下就已建立好全選，
+ * 我們的 handler 觀察得到）有效；但用獨立 harness 逐步量測後發現對 Playwright
+ * `fill()` 無效——`fill()` 內部呼叫 `input.select()` 來全選，而 `.select()` 是在
+ * focus 事件「派發完成之後」才真正套用全選範圍，我們的 handler 執行當下量到的
+ * 還是尚未套用的預設狀態（collapsed），判斷結果永遠是「非全選」，於是永遠不還原，
+ * 附加（而非取代）的 bug 依舊出現（如 12345 + 500 → 12345500）。
+ *
+ * 因此改為「賦值後一律設回全選」，不再依賴賦值前的（在多種觸發路徑下並不可靠的）
+ * 選取狀態判斷。這對可能誤傷的情境（使用者用滑鼠點欄位中間、想在特定位置插入字元）
+ * 影響有限：這批欄位本來就是「一次填一個完整金額」的用途（類似試算表儲存格），
+ * 聚焦即全選、方便直接打新數字覆蓋，是這類欄位常見且合理的互動慣例；且該情境
+ * 目前不在任何測試涵蓋範圍內。
+ *
+ * `setSelectionRange` 在部分 input type（如 number、email）上會拋錯或不存在；
+ * 三個呼叫端目前都是 `type="text"`，故可用，但仍以 `typeof` 防護，避免日後欄位
+ * type 改變時整段炸掉。
+ */
+function focusRewrite(el: HTMLInputElement, raw: string) {
+  if (el.value === raw) return
+  el.value = raw
+  if (typeof el.setSelectionRange === 'function') {
+    el.setSelectionRange(0, raw.length)
+  }
+}
+
+/**
+ * focus 時切成純數字顯示：除了更新 drafts（供下次 render 用），也要「同步」把 DOM
+ * 的 value 直接改寫成純數字，不能只靠 Vue 之後的 reactive re-render。
+ * 少了這一步，畫面從「10,000」變成「10000」會延到下一個 tick 才由 Vue 補上；
+ * 這段空窗期間如果有任何動作（例如自動化測試的 fill()、或使用者緊接著打字）
+ * 先用了還沒改寫的「10,000」，之後 Vue 才把 value 改成「10000」，時序就會亂掉。
+ *
+ * 同步回寫本身也有陷阱：原生 DOM 對 `el.value` 賦值一律會把選取範圍重置成游標
+ * 收合在字尾。若使用者剛好是用鍵盤 Tab 進來（瀏覽器對已有內容的欄位會全選）或
+ * 自動化工具呼叫 fill()，這裡的回寫會把選取範圍清掉，接下來的輸入就會變成
+ * 「附加」而不是「取代」，兩段數字黏在一起（如 10000 + 3000 → 100003000）。
+ * 因此改寫透過 `focusRewrite`：回寫後一律把選取範圍設回全選，讓後續輸入
+ * （不論是使用者打字或自動化工具的插入）維持「取代」語意（詳見該函式註解）。
+ */
+function onMoneyFocus(event: FocusEvent, key: string, v: number) {
+  const raw = rawMoneyDisplay(v)
+  drafts[key] = raw
+  focusRewrite(event.target as HTMLInputElement, raw)
+}
+
+function onMoneyBlur(key: string) {
+  delete drafts[key]
 }
 
 /**
  * 金額欄輸入：正規化成整數元，並把正規化後的字串同步寫回 DOM。
  * 少了這個回寫，使用者打的 -100／999.99 在正規化結果與目前值相同時（例如 -100 → 0，
  * 而金額本來就是 0）不會觸發 Vue 重新 patch，畫面就會殘留負數／小數，和實際金額不一致。
+ * 編輯中（drafts 有這個 key）回寫純數字；未在編輯（例如測試直接 setValue、或貼上後
+ * 從未 focus 過）則直接回寫千分位格式，兩者都要與剛正規化出來的 value 一致。
  */
-function onMoneyInput(event: Event, apply: (value: number) => void) {
+function onMoneyInput(key: string, event: Event, apply: (value: number) => void) {
   const el = event.target as HTMLInputElement
+  const editing = key in drafts
   const value = parseMoney(el.value)
-  const display = moneyDisplay(value)
+  const raw = rawMoneyDisplay(value)
+  const display = editing ? raw : formatOrBlank(raw)
+  if (editing) drafts[key] = display
   if (el.value !== display) el.value = display
   apply(value)
+}
+
+/**
+ * 列金額「純數字」值：手動覆寫（含明確填 0，例如贈品列）照原值顯示；
+ * 未覆寫時自動顯示 數量 × 單價，為 0 則留白（紙本空格）。
+ */
+function amountRaw(item: InvoiceItem): string {
+  if (item.amount !== null) return String(item.amount)
+  const v = rowAmount(item)
+  return v === 0 ? '' : String(v)
+}
+
+/** 列金額顯示：編輯中顯示純數字，否則顯示千分位格式 */
+function amountDisplay(item: InvoiceItem, index: number): string {
+  const key = `item-amount-${index}`
+  if (key in drafts) return drafts[key]
+  return formatOrBlank(amountRaw(item))
+}
+
+/** focus 切純數字需同步回寫 DOM，理由同 focusRewrite 的說明（避免清掉 focus 當下的全選範圍） */
+function onAmountFocus(event: FocusEvent, item: InvoiceItem, index: number) {
+  const raw = amountRaw(item)
+  drafts[`item-amount-${index}`] = raw
+  focusRewrite(event.target as HTMLInputElement, raw)
+}
+
+function onAmountBlur(index: number) {
+  delete drafts[`item-amount-${index}`]
 }
 
 /** 列金額輸入：清空 = 回自動計算（null）；其餘正規化成整數元（明確填 0 保留顯示 0） */
 function onAmountInput(event: Event, index: number) {
   const el = event.target as HTMLInputElement
+  const key = `item-amount-${index}`
+  const editing = key in drafts
   if (el.value === '') {
+    if (editing) drafts[key] = ''
     patchItem(index, { amount: null })
     return
   }
   const value = parseMoney(el.value)
-  if (el.value !== String(value)) el.value = String(value)
+  const raw = String(value)
+  const display = editing ? raw : formatMoney(value)
+  if (editing) drafts[key] = display
+  if (el.value !== display) el.value = display
   patchItem(index, { amount: value })
+}
+
+/** 單價顯示：編輯中顯示純數字，否則顯示千分位格式（只加在整數部分，小數保留原樣） */
+function priceDisplay(item: InvoiceItem, index: number): string {
+  const key = `item-price-${index}`
+  if (key in drafts) return drafts[key]
+  return formatOrBlank(item.unitPrice === null ? '' : String(item.unitPrice))
+}
+
+/** focus 切純數字需同步回寫 DOM，理由同 focusRewrite 的說明（避免清掉 focus 當下的全選範圍） */
+function onPriceFocus(event: FocusEvent, item: InvoiceItem, index: number) {
+  const raw = item.unitPrice === null ? '' : String(item.unitPrice)
+  drafts[`item-price-${index}`] = raw
+  focusRewrite(event.target as HTMLInputElement, raw)
+}
+
+function onPriceBlur(index: number) {
+  delete drafts[`item-price-${index}`]
+}
+
+/**
+ * 濾除單價欄不合法的字元：只保留數字與最多一個小數點（等同 /^\d*\.?\d*$/）。
+ * 逐字元過濾而非數值轉換，是為了保留「使用者打到一半的小數點」——例如「12.」
+ * 要能停留原樣，不能被強制清成「12」（ui-spec.md「金額千分位」）。
+ * 這個欄位改成 type="text" 後失去瀏覽器原生的數字鍵盤過濾，若不在這裡濾除字母
+ * 等雜訊字元，使用者可以打出「1a2.5b」這種字串：`parseNullable` 對它算出 NaN、
+ * 整列單價被判為 null、金額歸零，且會在 blur 時被靜默清空，使用者不會知道自己
+ * 打的字被丟掉了。
+ */
+function filterPriceChars(raw: string): string {
+  const digitsAndDot = raw.replace(/[^\d.]/g, '')
+  const firstDot = digitsAndDot.indexOf('.')
+  if (firstDot === -1) return digitsAndDot
+  // 只留第一個小數點，之後再輸入的小數點一律濾掉（值仍是合法數字，不會變成 NaN）
+  return digitsAndDot.slice(0, firstDot + 1) + digitsAndDot.slice(firstDot + 1).replace(/\./g, '')
+}
+
+/**
+ * 單價輸入：允許小數（秤重、單價含角），剝除千分位逗號與非數字雜訊字元
+ * （見 filterPriceChars），不四捨五入／不清成整數。
+ * 編輯中維持使用者剛輸入的原始字元（含小數點、結尾字元），避免每個輸入事件都把
+ * 「12.」這種打字打到一半的字串強制改寫成「12」，讓使用者打不出小數。
+ */
+function onPriceInput(event: Event, index: number) {
+  const el = event.target as HTMLInputElement
+  const key = `item-price-${index}`
+  const editing = key in drafts
+  const cleaned = filterPriceChars(el.value.replace(/,/g, ''))
+  const value = parseNullable(cleaned)
+  const display = editing ? cleaned : formatOrBlank(value === null ? '' : String(value))
+  if (editing) drafts[key] = display
+  if (el.value !== display) el.value = display
+  patchItem(index, { unitPrice: value, amount: null })
 }
 
 /**
@@ -200,6 +382,59 @@ function digitsOnly(event: Event): string {
   return cleaned
 }
 
+/** 民國日期「日」input 的 DOM 元素；月／年變動時要把重新夾好的值回寫到這個（別的）欄位 */
+const dateDayInputEl = ref<HTMLInputElement | null>(null)
+
+/**
+ * 依（可能剛變動的）年、月，把現有的日夾到合法上限（daysInMonth）；
+ * 超出上限才 emit 新值並回寫日期日 input 的 DOM——
+ * 沿用金額欄同樣的回寫做法（ui-spec §2 民國日期行「日期合法性驗證」）：
+ * 少了回寫，夾值結果與畫面顯示的舊值不同步時，使用者打的無效日仍會殘留在畫面上。
+ */
+function reclampDay(nextYear: string, nextMonth: string) {
+  const clamped = clampDayValue(
+    parseNullable(props.day),
+    parseNullable(nextYear),
+    parseNullable(nextMonth),
+  )
+  const nextDay = clamped === null ? '' : String(clamped)
+  if (nextDay !== props.day) emit('update:day', nextDay)
+  const el = dateDayInputEl.value
+  if (el && el.value !== nextDay) el.value = nextDay
+}
+
+/** 民國日期「年」：只收數字；年份改變可能讓二月 29 日失效，故連帶重新夾日 */
+function onDateYearInput(event: Event) {
+  const cleaned = digitsOnly(event)
+  emit('update:year', cleaned)
+  reclampDay(cleaned, props.month)
+}
+
+/** 民國日期「月」：只收數字，並夾到 1～12；月份改變的月天數不同，連帶重新夾日 */
+function onDateMonthInput(event: Event) {
+  const el = event.target as HTMLInputElement
+  const cleaned = digitsOnly(event)
+  const clampedMonth = clampMonthValue(parseNullable(cleaned))
+  const nextMonth = clampedMonth === null ? '' : String(clampedMonth)
+  if (el.value !== nextMonth) el.value = nextMonth
+  emit('update:month', nextMonth)
+  reclampDay(props.year, nextMonth)
+}
+
+/** 民國日期「日」：只收數字，並依目前年、月夾到 1～該月天數（不存在的日期，如 8/32） */
+function onDateDayInput(event: Event) {
+  const el = event.target as HTMLInputElement
+  const cleaned = digitsOnly(event)
+  const clampedDay = clampDayValue(
+    parseNullable(cleaned),
+    parseNullable(props.year),
+    parseNullable(props.month),
+  )
+  const nextDay = clampedDay === null ? '' : String(clampedDay)
+  if (el.value !== nextDay) el.value = nextDay
+  emit('update:day', nextDay)
+}
+
 function patchItem(index: number, patch: Partial<InvoiceItem>) {
   emit(
     'update:items',
@@ -209,20 +444,6 @@ function patchItem(index: number, patch: Partial<InvoiceItem>) {
 
 function patchBuyer(patch: Partial<Buyer>) {
   emit('update:buyer', { ...props.buyer, ...patch })
-}
-
-/**
- * 列金額顯示：手動覆寫（含明確填 0，例如贈品列）照原值顯示；
- * 未覆寫時自動顯示 數量 × 單價，為 0 則留白（紙本空格）。
- */
-function amountDisplay(item: InvoiceItem): string {
-  if (item.amount !== null) return String(item.amount)
-  const v = rowAmount(item)
-  return v === 0 ? '' : String(v)
-}
-
-function moneyDisplay(v: number): string {
-  return v === 0 ? '' : String(v)
 }
 
 // ---- 稅制 ----
@@ -235,7 +456,13 @@ const TAX_MODE_CELLS: { mode: TaxMode; testid: string }[] = [
 // ---- 中文大寫九格 ----
 const UPPER_UNITS = ['億', '仟', '佰', '拾', '萬', '仟', '佰', '拾', '元']
 const upperSlots = computed(() =>
-  upperDigits(props.total).map((digit, i) => ({ digit, unit: UPPER_UNITS[i] })),
+  upperDigits(props.total).map((digit, i) => ({
+    digit,
+    unit: UPPER_UNITS[i],
+    // 總計有值（正整數）時，高於最高有效位、沒有大寫數字的格子要橫線槓掉；
+    // 總計為 0 或空白（upperDigits 全回 null）時九格一律不劃線。
+    struck: digit === null && props.total > 0,
+  })),
 )
 </script>
 
@@ -312,7 +539,7 @@ const upperSlots = computed(() =>
               class="line-input date-input date-year"
               data-testid="date-year-input"
               :value="year"
-              @input="emit('update:year', digitsOnly($event))"
+              @input="onDateYearInput($event)"
             />
             <span class="printed">年</span>
             <input
@@ -323,10 +550,11 @@ const upperSlots = computed(() =>
               class="line-input date-input"
               data-testid="date-month-input"
               :value="month"
-              @input="emit('update:month', digitsOnly($event))"
+              @input="onDateMonthInput($event)"
             />
             <span class="printed">月</span>
             <input
+              ref="dateDayInputEl"
               type="text"
               inputmode="numeric"
               maxlength="2"
@@ -334,7 +562,7 @@ const upperSlots = computed(() =>
               class="line-input date-input"
               data-testid="date-day-input"
               :value="day"
-              @input="emit('update:day', digitsOnly($event))"
+              @input="onDateDayInput($event)"
             />
             <span class="printed">日</span>
           </span>
@@ -404,21 +632,26 @@ const upperSlots = computed(() =>
             </td>
             <td colspan="2">
               <input
-                type="number"
+                type="text"
+                inputmode="decimal"
                 class="cell-input num"
                 :data-testid="`item-price-${i}`"
-                :value="item.unitPrice ?? ''"
-                @input="patchItem(i, { unitPrice: parseNullable(inputValue($event)), amount: null })"
+                :value="priceDisplay(item, i)"
+                @input="onPriceInput($event, i)"
+                @focus="onPriceFocus($event, item, i)"
+                @blur="onPriceBlur(i)"
               />
             </td>
             <td>
               <input
-                type="number"
-                min="0"
+                type="text"
+                inputmode="numeric"
                 class="cell-input num"
                 :data-testid="`item-amount-${i}`"
-                :value="amountDisplay(item)"
+                :value="amountDisplay(item, i)"
                 @input="onAmountInput($event, i)"
+                @focus="onAmountFocus($event, item, i)"
+                @blur="onAmountBlur(i)"
               />
             </td>
             <td v-if="i < 2" class="br2">
@@ -443,12 +676,14 @@ const upperSlots = computed(() =>
               <td colspan="7" class="label-cell bl2">銷　售　額　合　計</td>
               <td>
                 <input
-                  type="number"
-                  min="0"
+                  type="text"
+                  inputmode="numeric"
                   class="cell-input num"
                   data-testid="sales-input"
-                  :value="moneyDisplay(sales)"
-                  @input="onMoneyInput($event, (value) => emit('update:sales', value))"
+                  :value="moneyDisplay('sales', sales)"
+                  @input="onMoneyInput('sales', $event, (value) => emit('update:sales', value))"
+                  @focus="onMoneyFocus($event, 'sales', sales)"
+                  @blur="onMoneyBlur('sales')"
                 />
               </td>
             </tr>
@@ -460,12 +695,14 @@ const upperSlots = computed(() =>
               <td class="subhead">免　稅</td>
               <td rowspan="2">
                 <input
-                  type="number"
-                  min="0"
+                  type="text"
+                  inputmode="numeric"
                   class="cell-input num"
                   data-testid="tax-input"
-                  :value="moneyDisplay(tax)"
-                  @input="onMoneyInput($event, (value) => emit('update:tax', value))"
+                  :value="moneyDisplay('tax', tax)"
+                  @input="onMoneyInput('tax', $event, (value) => emit('update:tax', value))"
+                  @focus="onMoneyFocus($event, 'tax', tax)"
+                  @blur="onMoneyBlur('tax')"
                 />
               </td>
             </tr>
@@ -492,12 +729,14 @@ const upperSlots = computed(() =>
             <td colspan="7" class="label-cell bl2">總　　　　計</td>
             <td>
               <input
-                type="number"
-                min="0"
+                type="text"
+                inputmode="numeric"
                 class="cell-input num"
                 data-testid="total-input"
-                :value="moneyDisplay(total)"
-                @input="onMoneyInput($event, (value) => emit('update:total', value))"
+                :value="moneyDisplay('total', total)"
+                @input="onMoneyInput('total', $event, (value) => emit('update:total', value))"
+                @focus="onMoneyFocus($event, 'total', total)"
+                @blur="onMoneyBlur('total')"
               />
             </td>
           </tr>
@@ -505,7 +744,13 @@ const upperSlots = computed(() =>
             <td class="upper-label bl2 bb2">總計新臺幣<br />（中文大寫）</td>
             <td colspan="7" class="upper-cell bb2">
               <div class="upper-row" data-testid="chinese-upper">
-                <span v-for="(slot, i) in upperSlots" :key="i" class="upper-slot">
+                <span
+                  v-for="(slot, i) in upperSlots"
+                  :key="i"
+                  class="upper-slot"
+                  :class="{ 'upper-slot--struck': slot.struck }"
+                  :data-testid="slot.struck ? `upper-struck-${i}` : undefined"
+                >
                   <span v-if="slot.digit" class="upper-digit" :data-testid="`upper-digit-${i}`">{{
                     slot.digit
                   }}</span
@@ -526,8 +771,8 @@ const upperSlots = computed(() =>
     </div>
 
     <p v-if="!isTriplicate" class="dup-note">
-      <span data-testid="tax-readonly">內含稅額 ${{ tax }}</span
-      >｜<span data-testid="sales-readonly">銷售額 ${{ sales }}</span>
+      <span data-testid="tax-readonly">內含稅額 ${{ formatMoney(tax) }}</span
+      >｜<span data-testid="sales-readonly">銷售額 ${{ formatMoney(sales) }}</span>
     </p>
   </div>
 </template>
@@ -871,6 +1116,7 @@ const upperSlots = computed(() =>
 
 /* 每格等寬，「大寫數字 + 印刷單位字」整組在格內置中（不貼齊格線左緣） */
 .upper-slot {
+  position: relative;
   flex: 1 1 0;
   display: flex;
   align-items: baseline;
@@ -880,14 +1126,32 @@ const upperSlots = computed(() =>
   white-space: nowrap;
 }
 
+/* 沒有大寫數字的空格（高於最高有效位）：橫線槓掉整格，防止事後塗改加大金額。
+   線用 ::after 畫在格內、橫貫整格；印刷單位字仍需疊在線之上可見。 */
+.upper-slot--struck::after {
+  content: '';
+  position: absolute;
+  left: 4%;
+  right: 4%;
+  top: 50%;
+  height: 2px;
+  background: var(--ink);
+  transform: translateY(-50%);
+  z-index: 0;
+}
+
 /* 實際數值用手寫墨藍色、略大略粗，與 olive 印刷單位字明顯區隔 */
 .upper-digit {
+  position: relative;
+  z-index: 1;
   color: var(--hand-ink);
   font-size: 1.12em;
   font-weight: 800;
 }
 
 .upper-unit {
+  position: relative;
+  z-index: 1;
   color: var(--ink);
 }
 

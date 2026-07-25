@@ -68,10 +68,11 @@ test('三聯式正算：數量 2 × 單價 5000 → 列金額 10000、銷售額 
   await page.getByTestId('item-qty-0').fill('2')
   await page.getByTestId('item-price-0').fill('5000')
 
-  await expect(page.getByTestId('item-amount-0')).toHaveValue('10000')
-  await expect(page.getByTestId('sales-input')).toHaveValue('10000')
+  // 以上兩欄填完後皆已離開聚焦（後面欄位從未 focus 過）→ 一律顯示千分位
+  await expect(page.getByTestId('item-amount-0')).toHaveValue('10,000')
+  await expect(page.getByTestId('sales-input')).toHaveValue('10,000')
   await expect(page.getByTestId('tax-input')).toHaveValue('500')
-  await expect(page.getByTestId('total-input')).toHaveValue('10500')
+  await expect(page.getByTestId('total-input')).toHaveValue('10,500')
 
   // 億～拾萬（第 0～3 格）只有印刷單位字，萬位起才有大寫數字
   expect(await upperCells(page)).toEqual([
@@ -96,7 +97,7 @@ test('三聯式正算：數量 2 × 單價 5000 → 列金額 10000、銷售額 
 test('三聯式反推：總計輸入 10500 → 銷售額 10000、稅額 500', async ({ page }) => {
   await page.getByTestId('total-input').fill('10500')
 
-  await expect(page.getByTestId('sales-input')).toHaveValue('10000')
+  await expect(page.getByTestId('sales-input')).toHaveValue('10,000')
   await expect(page.getByTestId('tax-input')).toHaveValue('500')
   expect((await upperCells(page)).slice(4)).toEqual(['壹萬', '零仟', '伍佰', '零拾', '零元'])
 })
@@ -106,20 +107,26 @@ test('三聯式反推：總計輸入 10500 → 銷售額 10000、稅額 500', as
 test('列金額手動覆寫：直接填 3000 生效；再改數量則清除覆寫回自動計算', async ({ page }) => {
   await page.getByTestId('item-qty-0').fill('2')
   await page.getByTestId('item-price-0').fill('5000')
-  await expect(page.getByTestId('sales-input')).toHaveValue('10000')
+  await expect(page.getByTestId('sales-input')).toHaveValue('10,000')
 
-  // 手動覆寫列金額（數量／單價不動）
-  await page.getByTestId('item-amount-0').fill('3000')
+  // 手動覆寫列金額（數量／單價不動）；填入後 item-price-0 已離開聚焦 → 顯示千分位
+  //
+  // item-amount-0 目前顯示的是千分位格式「10,000」（從未被聚焦過）。直接 fill()
+  // 即可正確取代成「3000」：InvoiceSheet 的 focus handler 把顯示值從「10,000」
+  // 同步改寫成「10000」後，會把選取範圍設回全選，接下來的插入才會是「取代」
+  // 而不是「附加」在字尾（F1 修正，見 InvoiceSheet.vue 的 focusRewrite）。
+  const amount0 = page.getByTestId('item-amount-0')
+  await amount0.fill('3000')
   await expect(page.getByTestId('item-qty-0')).toHaveValue('2')
-  await expect(page.getByTestId('item-price-0')).toHaveValue('5000')
-  await expect(page.getByTestId('sales-input')).toHaveValue('3000')
-  await expect(page.getByTestId('total-input')).toHaveValue('3150')
+  await expect(page.getByTestId('item-price-0')).toHaveValue('5,000')
+  await expect(page.getByTestId('sales-input')).toHaveValue('3,000')
+  await expect(page.getByTestId('total-input')).toHaveValue('3,150')
 
-  // 再改數量 → 覆寫清除，回到 數量 × 單價
+  // 再改數量 → 覆寫清除，回到 數量 × 單價；item-amount-0 已離開聚焦 → 顯示千分位
   await page.getByTestId('item-qty-0').fill('4')
-  await expect(page.getByTestId('item-amount-0')).toHaveValue('20000')
-  await expect(page.getByTestId('sales-input')).toHaveValue('20000')
-  await expect(page.getByTestId('total-input')).toHaveValue('21000')
+  await expect(page.getByTestId('item-amount-0')).toHaveValue('20,000')
+  await expect(page.getByTestId('sales-input')).toHaveValue('20,000')
+  await expect(page.getByTestId('total-input')).toHaveValue('21,000')
 })
 
 // ---- 4. 稅額手動覆寫 ----
@@ -131,8 +138,8 @@ test('稅額手動覆寫：總計 = 銷售額 + 新稅額，銷售額不變', as
 
   await page.getByTestId('tax-input').fill('800')
 
-  await expect(page.getByTestId('sales-input')).toHaveValue('10000')
-  await expect(page.getByTestId('total-input')).toHaveValue('10800')
+  await expect(page.getByTestId('sales-input')).toHaveValue('10,000')
+  await expect(page.getByTestId('total-input')).toHaveValue('10,800')
 })
 
 // ---- 5. 稅制切換 ----
@@ -140,7 +147,7 @@ test('稅額手動覆寫：總計 = 銷售額 + 新稅額，銷售額不變', as
 test('稅制切換：零稅率 → 稅額 0、總計 = 銷售額；回應稅 → 恢復 5%', async ({ page }) => {
   await page.getByTestId('item-qty-0').fill('2')
   await page.getByTestId('item-price-0').fill('5000')
-  await expect(page.getByTestId('total-input')).toHaveValue('10500')
+  await expect(page.getByTestId('total-input')).toHaveValue('10,500')
   await expect(page.getByTestId('tax-mode-taxable')).toHaveText('✓')
 
   await page.getByTestId('tax-mode-zero').click()
@@ -149,14 +156,14 @@ test('稅制切換：零稅率 → 稅額 0、總計 = 銷售額；回應稅 →
   await expect(page.getByTestId('tax-mode-taxable')).toHaveText('')
   // 稅額 0 在紙本上留白（moneyDisplay(0) = ''）
   await expect(page.getByTestId('tax-input')).toHaveValue('')
-  await expect(page.getByTestId('sales-input')).toHaveValue('10000')
-  await expect(page.getByTestId('total-input')).toHaveValue('10000')
+  await expect(page.getByTestId('sales-input')).toHaveValue('10,000')
+  await expect(page.getByTestId('total-input')).toHaveValue('10,000')
 
   await page.getByTestId('tax-mode-taxable').click()
 
   await expect(page.getByTestId('tax-mode-taxable')).toHaveText('✓')
   await expect(page.getByTestId('tax-input')).toHaveValue('500')
-  await expect(page.getByTestId('total-input')).toHaveValue('10500')
+  await expect(page.getByTestId('total-input')).toHaveValue('10,500')
 })
 
 // ---- 6. 二聯式 ----
@@ -182,9 +189,9 @@ test('二聯式：無統編、無營業稅列，日期行仍在；數量 1 × �
   await page.getByTestId('item-qty-0').fill('1')
   await page.getByTestId('item-price-0').fill('1050')
 
-  await expect(page.getByTestId('total-input')).toHaveValue('1050')
+  await expect(page.getByTestId('total-input')).toHaveValue('1,050')
   await expect(page.getByTestId('tax-readonly')).toHaveText('內含稅額 $50')
-  await expect(page.getByTestId('sales-readonly')).toHaveText('銷售額 $1000')
+  await expect(page.getByTestId('sales-readonly')).toHaveText('銷售額 $1,000')
   expect((await upperCells(page)).slice(5)).toEqual(['壹仟', '零佰', '伍拾', '零元'])
 })
 
@@ -196,20 +203,20 @@ test('多列品項：兩列合計正確；清空第 2 列數量後合計恢復',
 
   await page.getByTestId('item-qty-0').fill('1')
   await page.getByTestId('item-price-0').fill('1000')
-  await expect(page.getByTestId('sales-input')).toHaveValue('1000')
+  await expect(page.getByTestId('sales-input')).toHaveValue('1,000')
 
   await page.getByTestId('item-qty-1').fill('3')
   await page.getByTestId('item-price-1').fill('200')
 
   await expect(page.getByTestId('item-amount-1')).toHaveValue('600')
-  await expect(page.getByTestId('sales-input')).toHaveValue('1600')
-  await expect(page.getByTestId('total-input')).toHaveValue('1680')
+  await expect(page.getByTestId('sales-input')).toHaveValue('1,600')
+  await expect(page.getByTestId('total-input')).toHaveValue('1,680')
 
   await page.getByTestId('item-qty-1').fill('')
 
   await expect(page.getByTestId('item-amount-1')).toHaveValue('')
-  await expect(page.getByTestId('sales-input')).toHaveValue('1000')
-  await expect(page.getByTestId('total-input')).toHaveValue('1050')
+  await expect(page.getByTestId('sales-input')).toHaveValue('1,000')
+  await expect(page.getByTestId('total-input')).toHaveValue('1,050')
 })
 
 // ---- 8. 品名長字串換行 ----
@@ -342,6 +349,53 @@ test('大寫數字：手寫墨色與印刷單位字不同色，且在格內置�
   )
 })
 
+// ---- 11b. 大寫空格橫線槓掉 ----
+
+test('大寫空格橫線槓掉：總計 3570 → 前五格（億仟佰拾萬）劃線、後四格無線；線為 olive 印刷墨；單位字仍可見', async ({
+  page,
+}) => {
+  await page.getByTestId('total-input').fill('3570')
+
+  // 只有高於最高有效位（億／仟／佰／拾／萬，i=0~4）的空格劃線
+  await expect(page.getByTestId('chinese-upper').locator('.upper-slot--struck')).toHaveCount(5)
+  for (const i of [0, 1, 2, 3, 4]) {
+    await expect(page.getByTestId(`upper-struck-${i}`)).toHaveCount(1)
+  }
+  for (const i of [5, 6, 7, 8]) {
+    await expect(page.getByTestId(`upper-struck-${i}`)).toHaveCount(0)
+  }
+
+  // 線用 ::after 畫出、絕對定位橫貫格內，顏色同 olive 印刷墨（與單位字同色系）
+  const afterStyle = await page.getByTestId('upper-struck-0').evaluate((el) => {
+    const cs = getComputedStyle(el, '::after')
+    return {
+      position: cs.position,
+      backgroundColor: cs.backgroundColor,
+      height: parseFloat(cs.height),
+      left: cs.left,
+      right: cs.right,
+    }
+  })
+  expect(afterStyle.position).toBe('absolute')
+  expect(afterStyle.backgroundColor).toBe('rgb(107, 100, 20)')
+  expect(afterStyle.height).toBeGreaterThanOrEqual(1)
+  expect(afterStyle.left).not.toBe('0px')
+  expect(afterStyle.right).not.toBe('0px')
+
+  // 印刷單位字仍要看得見（不被線蓋掉或隱藏），且不是用 text-decoration 槓字
+  const unit = page.getByTestId('upper-struck-0').locator('.upper-unit')
+  await expect(unit).toHaveText('億')
+  await expect(unit).toBeVisible()
+  const unitBox = await unit.boundingBox()
+  expect(unitBox?.width).toBeGreaterThan(0)
+  expect(unitBox?.height).toBeGreaterThan(0)
+  expect(await computedStyle(unit, 'text-decoration-line')).toBe('none')
+
+  // 總計為 0 或空白時九格一律不劃線
+  await page.getByTestId('total-input').fill('')
+  await expect(page.getByTestId('chinese-upper').locator('.upper-slot--struck')).toHaveCount(0)
+})
+
 // ---- 12. 買受人欄位可填 ----
 
 test('買受人區：名稱、統編、地址皆可填且值保留', async ({ page }) => {
@@ -374,7 +428,7 @@ test('清除重填：買受人／品項／金額歸零、大寫無數字、期�
   await page.getByTestId('date-day-input').fill('15')
   await page.getByTestId('tax-mode-exempt').click()
 
-  await expect(page.getByTestId('total-input')).toHaveValue('10700')
+  await expect(page.getByTestId('total-input')).toHaveValue('10,700')
 
   await page.getByTestId('clear-button').click()
 
@@ -457,9 +511,10 @@ test('小數金額：總計 999.99 → 1000／稅 48（無浮點雜訊），大�
   await expect(page.getByTestId('tax-input')).toHaveValue('5')
 
   await page.getByTestId('sales-input').fill('1000.5')
+  // sales-input 剛填完仍聚焦中 → 顯示純數字；total-input 已離開聚焦 → 顯示千分位
   await expect(page.getByTestId('sales-input')).toHaveValue('1001')
   await expect(page.getByTestId('tax-input')).toHaveValue('50')
-  await expect(page.getByTestId('total-input')).toHaveValue('1051')
+  await expect(page.getByTestId('total-input')).toHaveValue('1,051')
 
   await page.getByTestId('item-amount-0').fill('100.5')
   await expect(page.getByTestId('item-amount-0')).toHaveValue('101')
@@ -482,18 +537,18 @@ test('負數金額：總計 -100 歸零、大寫九格無數字；列金額 -500
   await expect(page.getByTestId('chinese-upper').locator('.upper-digit')).toHaveCount(0)
 
   await page.getByTestId('item-amount-0').fill('1000')
-  await expect(page.getByTestId('sales-input')).toHaveValue('1000')
+  await expect(page.getByTestId('sales-input')).toHaveValue('1,000')
 
   await page.getByTestId('item-amount-0').fill('-500')
   await expect(page.getByTestId('item-amount-0')).toHaveValue('0')
   // 合計歸零時不覆蓋既有金額（ui-spec.md §3），但不會出現負銷售額／負總計
-  await expect(page.getByTestId('sales-input')).toHaveValue('1000')
-  await expect(page.getByTestId('total-input')).toHaveValue('1050')
+  await expect(page.getByTestId('sales-input')).toHaveValue('1,000')
+  await expect(page.getByTestId('total-input')).toHaveValue('1,050')
 
   await page.getByTestId('tax-input').fill('-9999')
   await expect(page.getByTestId('tax-input')).toHaveValue('')
-  await expect(page.getByTestId('sales-input')).toHaveValue('1000')
-  await expect(page.getByTestId('total-input')).toHaveValue('1000')
+  await expect(page.getByTestId('sales-input')).toHaveValue('1,000')
+  await expect(page.getByTestId('total-input')).toHaveValue('1,000')
 })
 
 // ---- 17. 欄寬／字級改變後品名重新增高（不吃字） ----
@@ -544,13 +599,127 @@ test('三聯式選零稅率後切二聯式：稅制回應稅，2000 → 內含�
   await expect(page.getByTestId('tax-mode-taxable')).toHaveCount(0)
   await expect(page.getByTestId('tax-readonly')).toHaveText('內含稅額 $48')
 
-  await page.getByTestId('total-input').fill('2000')
+  // total-input 目前顯示千分位格式「1,000」且從未被聚焦過；直接 fill() 即可正確
+  // 取代（focus handler 回寫後會設回全選，見 F1 修正）
+  const total = page.getByTestId('total-input')
+  await total.fill('2000')
   await expect(page.getByTestId('tax-readonly')).toHaveText('內含稅額 $95')
-  await expect(page.getByTestId('sales-readonly')).toHaveText('銷售額 $1905')
+  await expect(page.getByTestId('sales-readonly')).toHaveText('銷售額 $1,905')
 
   await page.getByTestId('tab-triplicate').click()
   await expect(page.getByTestId('tax-mode-taxable')).toHaveText('✓')
   await expect(page.getByTestId('tax-mode-zero')).toHaveText('')
+})
+
+// ---- 18b. 金額千分位：blur 顯示逗號、focus 顯示純數字 ----
+
+test('金額千分位：欄位聚焦時顯示純數字，離開欄位（blur）後顯示千分位；連動更新的欄位也套用千分位', async ({
+  page,
+}) => {
+  const sales = page.getByTestId('sales-input')
+
+  await sales.fill('10000')
+  // 剛填完仍聚焦中 → 顯示純數字（游標不會因為插入逗號而亂跳）
+  await expect(sales).toHaveValue('10000')
+
+  await sales.blur()
+  // 離開欄位 → 顯示千分位
+  await expect(sales).toHaveValue('10,000')
+
+  // 重新聚焦 → 立刻變回純數字，方便繼續編輯
+  await sales.focus()
+  await expect(sales).toHaveValue('10000')
+
+  await sales.blur()
+  await expect(sales).toHaveValue('10,000')
+
+  // 連動更新（銷售額 → 總計、稅額）且從未被使用者聚焦過的欄位，一律顯示千分位
+  await expect(page.getByTestId('total-input')).toHaveValue('10,500')
+  await expect(page.getByTestId('tax-input')).toHaveValue('500')
+
+  // 列金額／單價欄位也適用同樣的 focus／blur 規則
+  await page.getByTestId('item-qty-0').fill('2')
+  const price = page.getByTestId('item-price-0')
+  await price.fill('6000')
+  await expect(price).toHaveValue('6000') // 剛填完仍聚焦中
+  await price.blur()
+  await expect(price).toHaveValue('6,000')
+  await expect(page.getByTestId('item-amount-0')).toHaveValue('12,000') // 從未聚焦，顯示千分位
+})
+
+// ---- 18c. 直接貼上含逗號的金額字串仍可正確解析 ----
+
+test('直接貼上含逗號的金額字串（如「10,500」）能正確解析成數字，不會被當非數字歸零', async ({
+  page,
+}) => {
+  const sales = page.getByTestId('sales-input')
+
+  // Playwright 的 fill() 等同「聚焦→設值→觸發 input」，模擬使用者聚焦後貼上含逗號的字串
+  await sales.fill('10,500')
+  // 聚焦中立刻剝除逗號、顯示純數字
+  await expect(sales).toHaveValue('10500')
+  // 稅額／總計依正確解析出的 10500 算出（不是 NaN → 0）
+  await expect(page.getByTestId('tax-input')).toHaveValue('525')
+  await expect(page.getByTestId('total-input')).toHaveValue('11,025')
+
+  await sales.blur()
+  await expect(sales).toHaveValue('10,500')
+
+  // 單價欄位貼上含逗號字串也能正確解析（允許小數，千分位只加在整數部分）
+  await page.getByTestId('item-qty-0').fill('1')
+  const price = page.getByTestId('item-price-0')
+  await price.fill('1,234.5')
+  await expect(price).toHaveValue('1234.5')
+  await price.blur()
+  await expect(price).toHaveValue('1,234.5')
+  await expect(page.getByTestId('item-amount-0')).toHaveValue('1,235') // round(1234.5) = 1235
+})
+
+// ---- 18d. F1 迴歸：Tab 鍵盤聚焦到已顯示千分位的欄位後直接打字，須為取代而非附加 ----
+
+test('F1 迴歸：Tab 聚焦到已顯示千分位的列金額欄後直接打字，是取代而非附加', async ({ page }) => {
+  // 先讓 item-amount-0 離開聚焦，顯示千分位「12,345」
+  const amount0 = page.getByTestId('item-amount-0')
+  await amount0.fill('12345')
+  await amount0.blur()
+  await expect(amount0).toHaveValue('12,345')
+
+  // 用鍵盤 Tab（而非滑鼠 click／fill()）從上一欄（單價）聚焦進來：瀏覽器對已有內容的
+  // 文字欄位在鍵盤 Tab 聚焦時會全選其內容，這正是 focus handler 的 DOM 回寫
+  // （千分位「12,345」→ 純數字「12345」）必須保住的全選範圍（F1）。
+  await page.getByTestId('item-price-0').focus()
+  await page.keyboard.press('Tab')
+  await expect(amount0).toBeFocused()
+
+  // 直接打字（非 fill()）：若全選範圍被回寫清掉、游標收合到字尾，結果會是附加
+  // 「12345500」；修好後應是取代，值變成「500」
+  await page.keyboard.type('500')
+  await expect(amount0).toHaveValue('500')
+
+  await amount0.blur()
+  await expect(amount0).toHaveValue('500')
+})
+
+test('F1 迴歸：Tab 聚焦到已顯示千分位的單價欄（含小數）後直接打字，是取代而非附加', async ({
+  page,
+}) => {
+  // 先讓 item-price-0 離開聚焦，顯示千分位＋小數「1,234.5」
+  const price0 = page.getByTestId('item-price-0')
+  await price0.fill('1234.5')
+  await price0.blur()
+  await expect(price0).toHaveValue('1,234.5')
+
+  // 用鍵盤 Tab 從上一欄（數量）聚焦進來
+  await page.getByTestId('item-qty-0').focus()
+  await page.keyboard.press('Tab')
+  await expect(price0).toBeFocused()
+
+  // 直接打字：修好前會變成「1234.599」（附加），修好後應是取代，值變成「99」
+  await page.keyboard.type('99')
+  await expect(price0).toHaveValue('99')
+
+  await price0.blur()
+  await expect(price0).toHaveValue('99')
 })
 
 // ---- 19. 外框 2px、印刷字內距 ----
@@ -637,7 +806,25 @@ test('期別年與民國日期只收阿拉伯數字（abc 進不去、9a 只留 
   await expect(page.getByTestId('date-year-input')).toHaveValue('')
 })
 
-// ---- 23. 自動增高流程不得產生瀏覽器錯誤（ResizeObserver loop 守門） ----
+// ---- 23. 民國日期合法性驗證：不存在的日期要被夾到合法範圍 ----
+
+test('民國日期合法性驗證：8/32 夾成 8/31，月改 2 後日自動夾到 28/29', async ({ page }) => {
+  // 民國 113 = 2024 閏年，先固定年份讓二月天數可預期
+  await page.getByTestId('date-year-input').fill('113')
+  await page.getByTestId('date-month-input').fill('8')
+  await page.getByTestId('date-day-input').fill('32')
+  await expect(page.getByTestId('date-day-input')).toHaveValue('31')
+
+  // 月改成 2（閏年）：既有的日 31 超出二月上限，要自動夾到 29
+  await page.getByTestId('date-month-input').fill('2')
+  await expect(page.getByTestId('date-day-input')).toHaveValue('29')
+
+  // 年改回平年：既有的日 29 超出新上限，要自動夾到 28
+  await page.getByTestId('date-year-input').fill('114')
+  await expect(page.getByTestId('date-day-input')).toHaveValue('28')
+})
+
+// ---- 24. 自動增高流程不得產生瀏覽器錯誤（ResizeObserver loop 守門） ----
 
 test('自動增高（長品名＋縮視窗＋放大字級）全程不產生 console error／page error／window error', async ({
   page,

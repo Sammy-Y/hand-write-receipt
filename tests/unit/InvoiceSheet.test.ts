@@ -1,8 +1,8 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
-import InvoiceSheet from './InvoiceSheet.vue'
-import sheetSource from './InvoiceSheet.vue?raw'
-import type { Buyer, InvoiceItem, InvoiceType, TaxMode } from '../types'
+import InvoiceSheet from '../../src/components/InvoiceSheet.vue'
+import sheetSource from '../../src/components/InvoiceSheet.vue?raw'
+import type { Buyer, InvoiceItem, InvoiceType, TaxMode } from '../../src/types'
 
 function emptyItem(overrides: Partial<InvoiceItem> = {}): InvoiceItem {
   return { name: '', quantity: null, unitPrice: null, amount: null, note: '', ...overrides }
@@ -284,6 +284,143 @@ describe('InvoiceSheet（金額欄一律整數元、非負）', () => {
   })
 })
 
+describe('InvoiceSheet（金額千分位：ui-spec.md「金額千分位」）', () => {
+  it('列金額／單價／銷售額／稅額／總計改用 type="text" 搭配對應 inputmode（手機仍跳數字鍵盤）', () => {
+    const wrapper = mountSheet()
+    for (const testid of ['item-amount-0', 'sales-input', 'tax-input', 'total-input']) {
+      const el = wrapper.find(`[data-testid="${testid}"]`).element as HTMLInputElement
+      expect(el.type).toBe('text')
+      expect(el.getAttribute('inputmode')).toBe('numeric')
+    }
+    const price = wrapper.find('[data-testid="item-price-0"]').element as HTMLInputElement
+    expect(price.type).toBe('text')
+    expect(price.getAttribute('inputmode')).toBe('decimal')
+    // 數量維持 type="number"（不加千分位，是計數不是金額）
+    const qty = wrapper.find('[data-testid="item-qty-0"]').element as HTMLInputElement
+    expect(qty.type).toBe('number')
+  })
+
+  it('未聚焦（含被連動更新）的欄位一律顯示千分位：列金額、單價、銷售額、稅額、總計', () => {
+    const items = emptyItems()
+    items[0] = emptyItem({ quantity: 2, unitPrice: 12345, amount: 10000 })
+    const wrapper = mountSheet({ items, sales: 12345, tax: 617, total: 12962 })
+
+    expect(fieldValue(wrapper, 'item-amount-0')).toBe('10,000')
+    expect(fieldValue(wrapper, 'item-price-0')).toBe('12,345')
+    expect(fieldValue(wrapper, 'sales-input')).toBe('12,345')
+    expect(fieldValue(wrapper, 'total-input')).toBe('12,962')
+  })
+
+  it('二聯式框外內含稅額／銷售額一律顯示千分位', () => {
+    const wrapper = mountSheet({ invoiceType: 'duplicate', sales: 190500, tax: 9525, total: 200025 })
+    expect(wrapper.find('[data-testid="tax-readonly"]').text()).toBe('內含稅額 $9,525')
+    expect(wrapper.find('[data-testid="sales-readonly"]').text()).toBe('銷售額 $190,500')
+  })
+
+  it('欄位 focus 時顯示純數字（不含千分位），blur 後恢復千分位', async () => {
+    const wrapper = mountSheet({ sales: 10000 })
+    const sales = wrapper.find('[data-testid="sales-input"]')
+    expect(fieldValue(wrapper, 'sales-input')).toBe('10,000')
+
+    await sales.trigger('focus')
+    expect(fieldValue(wrapper, 'sales-input')).toBe('10000')
+
+    await sales.trigger('blur')
+    expect(fieldValue(wrapper, 'sales-input')).toBe('10,000')
+  })
+
+  it('列金額／單價欄位同樣支援 focus 顯示純數字、blur 顯示千分位', async () => {
+    const items = emptyItems()
+    items[0] = emptyItem({ quantity: 2, unitPrice: 6000, amount: 12000 })
+    const wrapper = mountSheet({ items })
+    const amount = wrapper.find('[data-testid="item-amount-0"]')
+    const price = wrapper.find('[data-testid="item-price-0"]')
+
+    expect(fieldValue(wrapper, 'item-amount-0')).toBe('12,000')
+    expect(fieldValue(wrapper, 'item-price-0')).toBe('6,000')
+
+    await amount.trigger('focus')
+    await price.trigger('focus')
+    expect(fieldValue(wrapper, 'item-amount-0')).toBe('12000')
+    expect(fieldValue(wrapper, 'item-price-0')).toBe('6000')
+
+    await amount.trigger('blur')
+    await price.trigger('blur')
+    expect(fieldValue(wrapper, 'item-amount-0')).toBe('12,000')
+    expect(fieldValue(wrapper, 'item-price-0')).toBe('6,000')
+  })
+
+  it('解析輸入時先剝除逗號：直接貼上「10,500」能正確解析成 10500（不會被當非數字歸零）', async () => {
+    const wrapper = mountSheet()
+    await wrapper.find('[data-testid="sales-input"]').setValue('10,500')
+    expect(wrapper.emitted('update:sales')).toEqual([[10500]])
+    expect(fieldValue(wrapper, 'sales-input')).toBe('10,500')
+  })
+
+  it('聚焦中貼上含逗號字串 → 立即剝除逗號、顯示純數字', async () => {
+    const wrapper = mountSheet()
+    const sales = wrapper.find('[data-testid="sales-input"]')
+    await sales.trigger('focus')
+    await sales.setValue('10,500')
+
+    expect(fieldValue(wrapper, 'sales-input')).toBe('10500')
+    expect(wrapper.emitted('update:sales')).toEqual([[10500]])
+  })
+
+  it('單價允許小數，千分位只加在整數部分（1234.5 → 1,234.5）', () => {
+    const items = emptyItems()
+    items[0] = emptyItem({ unitPrice: 1234.5 })
+    const wrapper = mountSheet({ items })
+    expect(fieldValue(wrapper, 'item-price-0')).toBe('1,234.5')
+  })
+
+  it('單價編輯中輸入小數點不會被強制清成整數（保留使用者打到一半的字元）', async () => {
+    const wrapper = mountSheet()
+    const price = wrapper.find('[data-testid="item-price-0"]')
+    await price.trigger('focus')
+    await price.setValue('12.')
+
+    expect(fieldValue(wrapper, 'item-price-0')).toBe('12.')
+    expect(lastEmittedItems(wrapper)[0].unitPrice).toBe(12)
+
+    await price.setValue('12.5')
+    expect(fieldValue(wrapper, 'item-price-0')).toBe('12.5')
+    expect(lastEmittedItems(wrapper)[0].unitPrice).toBe(12.5)
+  })
+
+  it('單價 type="text" 失去瀏覽器數字過濾後，仍濾除字母等非數字字元，不會讓單價被判為 null 而靜默清空（F3）', async () => {
+    const wrapper = mountSheet()
+    const price = wrapper.find('[data-testid="item-price-0"]')
+    await price.trigger('focus')
+
+    // 使用者打出「1a2.5b」：字母應被濾掉，只留「12.5」，單價正確解析為 12.5，不是 null
+    await price.setValue('1a2.5b')
+    expect(fieldValue(wrapper, 'item-price-0')).toBe('12.5')
+    expect(lastEmittedItems(wrapper)[0].unitPrice).toBe(12.5)
+
+    // 第二個小數點應被濾掉（維持只有一個小數點的合法數字字串），不會讓值變成 NaN
+    await price.setValue('1.2.3')
+    expect(fieldValue(wrapper, 'item-price-0')).toBe('1.23')
+    expect(lastEmittedItems(wrapper)[0].unitPrice).toBe(1.23)
+
+    // 全部是非法字元 → 濾完是空字串 → 視為未填（null），而不是靜默清空成 0
+    await price.setValue('abc')
+    expect(fieldValue(wrapper, 'item-price-0')).toBe('')
+    expect(lastEmittedItems(wrapper)[0].unitPrice).toBeNull()
+
+    await price.trigger('blur')
+    // blur 後仍是「留白」（未填），不是被清空成看不出原因的空白
+    expect(fieldValue(wrapper, 'item-price-0')).toBe('')
+  })
+
+  it('金額為 0（含明確覆寫為 0）千分位格式化後仍顯示 0，不受千分位邏輯影響變空白', () => {
+    const items = emptyItems()
+    items[0] = emptyItem({ name: '贈品', amount: 0 })
+    const wrapper = mountSheet({ items })
+    expect(fieldValue(wrapper, 'item-amount-0')).toBe('0')
+  })
+})
+
 describe('InvoiceSheet（民國年月日只收數字）', () => {
   it('期別年／年／月／日填入非數字 → emit 濾除後的數字字串並回寫 DOM', async () => {
     const wrapper = mountSheet()
@@ -526,7 +663,7 @@ describe('InvoiceSheet（三聯式／二聯式列差異）', () => {
     expect(wrapper.find('[data-testid="date-year-input"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="date-month-input"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="tax-readonly"]').text()).toBe('內含稅額 $50')
-    expect(wrapper.find('[data-testid="sales-readonly"]').text()).toBe('銷售額 $1000')
+    expect(wrapper.find('[data-testid="sales-readonly"]').text()).toBe('銷售額 $1,000')
   })
 })
 
@@ -575,6 +712,46 @@ describe('InvoiceSheet（中文大寫九格）', () => {
     expect(cssRule('.upper-digit')).toMatch(/font-size:\s*1\.\d+em/)
     expect(cssRule('.upper-digit')).toMatch(/font-weight:\s*(800|bold)/)
   })
+
+  it('總計 3570 → 前五格（億仟佰拾萬）橫線槓掉，後四格（仟佰拾元）沒有', () => {
+    const wrapper = mountSheet({ total: 3570 })
+    const slots = wrapper.find('[data-testid="chinese-upper"]').findAll('.upper-slot')
+    expect(slots).toHaveLength(9)
+    for (const i of [0, 1, 2, 3, 4]) {
+      expect(slots[i].classes()).toContain('upper-slot--struck')
+      expect(slots[i].attributes('data-testid')).toBe(`upper-struck-${i}`)
+    }
+    for (const i of [5, 6, 7, 8]) {
+      expect(slots[i].classes()).not.toContain('upper-slot--struck')
+      expect(wrapper.find(`[data-testid="upper-struck-${i}"]`).exists()).toBe(false)
+    }
+    // 印刷單位字仍要看得見，不因劃線而被隱藏
+    expect(slots.map((s) => s.find('.upper-unit').text())).toEqual([
+      '億',
+      '仟',
+      '佰',
+      '拾',
+      '萬',
+      '仟',
+      '佰',
+      '拾',
+      '元',
+    ])
+  })
+
+  it('總計 0 或空白 → 九格一律不劃線', () => {
+    for (const total of [0, NaN]) {
+      const wrapper = mountSheet({ total })
+      expect(wrapper.findAll('.upper-slot--struck')).toHaveLength(0)
+    }
+  })
+
+  it('樣式契約：橫線槓掉用 olive 印刷墨色（同 --ink），且橫貫整格而非文字刪除線', () => {
+    expect(cssRule('.upper-slot--struck::after')).toContain('background: var(--ink)')
+    expect(cssRule('.upper-slot--struck::after')).toMatch(/position:\s*absolute/)
+    expect(cssRule('.upper-digit')).not.toMatch(/text-decoration/)
+    expect(cssRule('.upper-unit')).not.toMatch(/text-decoration/)
+  })
 })
 
 describe('InvoiceSheet（買受人區與民國日期行）', () => {
@@ -601,6 +778,44 @@ describe('InvoiceSheet（買受人區與民國日期行）', () => {
     expect(wrapper.emitted('update:year')).toEqual([['116']])
     expect(wrapper.emitted('update:month')).toEqual([['7']])
     expect(wrapper.emitted('update:day')).toEqual([['25']])
+  })
+
+  it('日期合法性驗證：輸入不存在的日（8 月 32 日）→ 夾成 31 並回寫 DOM', async () => {
+    const wrapper = mountSheet({ year: '115', month: '8', day: '' })
+    await wrapper.find('[data-testid="date-day-input"]').setValue('32')
+
+    expect(wrapper.emitted('update:day')).toEqual([['31']])
+    expect(fieldValue(wrapper, 'date-day-input')).toBe('31')
+  })
+
+  it('日期合法性驗證：月改為 2、既有日 31 超出上限 → 依年份夾成 28 或 29 並回寫日期日 input', async () => {
+    const leap = mountSheet({ year: '113', month: '', day: '31' }) // 民國 113 = 2024 閏年
+    await leap.find('[data-testid="date-month-input"]').setValue('2')
+    expect(leap.emitted('update:month')).toEqual([['2']])
+    expect(leap.emitted('update:day')).toEqual([['29']])
+    expect(fieldValue(leap, 'date-day-input')).toBe('29')
+
+    const common = mountSheet({ year: '114', month: '', day: '31' }) // 民國 114 = 2025 平年
+    await common.find('[data-testid="date-month-input"]').setValue('2')
+    expect(common.emitted('update:day')).toEqual([['28']])
+    expect(fieldValue(common, 'date-day-input')).toBe('28')
+  })
+
+  it('日期合法性驗證：月份超出 1～12 夾到 12，並同步回寫月份 input', async () => {
+    const wrapper = mountSheet({ year: '115', month: '', day: '' })
+    await wrapper.find('[data-testid="date-month-input"]').setValue('13')
+
+    expect(wrapper.emitted('update:month')).toEqual([['12']])
+    expect(fieldValue(wrapper, 'date-month-input')).toBe('12')
+  })
+
+  it('日期合法性驗證：改年份造成既有二月 29 日失效（閏年改平年）→ 夾成 28', async () => {
+    const wrapper = mountSheet({ year: '113', month: '2', day: '29' }) // 民國 113 = 2024 閏年
+    await wrapper.find('[data-testid="date-year-input"]').setValue('114') // 民國 114 = 2025 平年
+
+    expect(wrapper.emitted('update:year')).toEqual([['114']])
+    expect(wrapper.emitted('update:day')).toEqual([['28']])
+    expect(fieldValue(wrapper, 'date-day-input')).toBe('28')
   })
 
   it('民國日期行置中：統編在左側欄、日期在中間欄（左右各 1fr）', () => {
