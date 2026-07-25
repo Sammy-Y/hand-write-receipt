@@ -75,13 +75,13 @@
 
 `tab-triplicate`、`tab-duplicate`、`clear-button`、`period-year-input`、`period-month-select`、`buyer-name-input`、`ubn-input`、`buyer-address-input`、`date-year-input`、`date-month-input`、`date-day-input`、`item-name-N`、`item-qty-N`、`item-price-N`、`item-amount-N`、`item-note-0/1`、`sales-input`、`tax-input`、`total-input`、`tax-mode-taxable/zero/exempt`、`chinese-upper`、（大寫數字）`upper-digit-N`（N = 0～8，由億到元；僅在該位有數字時存在）、（二聯式框外）`tax-readonly`、`sales-readonly`。
 
-## 7. 清除重填涵蓋範圍
+## 6. 清除重填涵蓋範圍
 
-清除時一併重置：買受人名稱／統編／地址、民國日期（年回當年、月日清空）、期別（年回當年、月份回當期）、5 列品項（品名/數量/單價/金額覆寫/備註）、銷售額/稅額/總計、稅制回應稅。
+清除時一併重置：買受人名稱／統編／地址、民國日期（年回當年、月日清空）、期別（年回當年、月份回當期）、5 列品項（品名/數量/單價/金額覆寫/備註）、銷售額/稅額/總計、稅制回應稅。發票類型（三聯式／二聯式）維持不變。
 
-## 6. 測試更新方向
+## 7. 測試覆蓋範圍
 
-- `invoice.test.ts`：加 `upperDigits`（0、10500、100001、1e8、非整數）、`rowAmount`/`rowsTotal`（覆寫優先）案例。
-- `InvoiceSheet.test.ts`：固定 5 列、金額覆寫 emit、稅制 ✓ 切換、三聯/二聯列差異、大寫九格內容、不 mutate props。
-- `App.test.ts`：雙向計算沿用但斷言新 DOM（total-input 值、chinese-upper 各格）、稅額手動覆寫、零稅率歸零、清除重填。
-- e2e：改用新 testid；原「新增/刪除列」情境改為「多列填值合計正確、清空恢復」；加「直接填金額覆寫」「切零稅率稅額歸 0」情境。
+- `invoice.test.ts`：`upperDigits`（0、10500、100001、1e8、九位上限、非整數）、`rowAmount`／`rowsTotal`（覆寫優先）、`normalizeMoney`（負數／小數／NaN／Infinity）、`fromSalesByMode`／`fromTotalByMode`／`withTaxOverride`、恆等式全值域掃描。
+- `InvoiceSheet.test.ts`：固定 5 列、金額覆寫 emit 與 DOM 回寫、稅制 ✓ 切換、三聯／二聯列差異、大寫九格內容與顏色契約、期別下拉六選項、日期只收數字、textarea 自動增高與 ResizeObserver 行為、不 mutate props。
+- `App.test.ts`：雙向計算、稅額手動覆寫、零稅率歸零、小數與負數正規化、切二聯式回應稅、清除重填涵蓋範圍。
+- e2e：本節 testid 契約全覆蓋，另含長品名不截斷（含縮放視窗與放大字級）、外框 2px／內線 1px、375px 統編不被裁、tabs 鍵盤操作、操作全程無 console／page／window error。
