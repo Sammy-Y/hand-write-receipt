@@ -37,6 +37,8 @@ npm test           # 單元／元件測試（vitest）
 npm run test:e2e   # 端對端測試（Playwright，首次需 npx playwright install chromium）
 ```
 
+GitHub Actions CI 會在每次 push 與建立 PR 時自動跑完整測試套件（型別檢查、Vitest、build、Playwright e2e）。
+
 ## 專案結構
 
 ```

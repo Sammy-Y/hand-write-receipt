@@ -52,11 +52,21 @@
      - **空格以橫線槓掉（2026-07-25 新增）**：總計有值時，高於最高有效位、沒有大寫數字的格子（例如總計 3,570 時的億／仟／佰／拾／萬）要以一條**橫線劃掉**該格，這是紙本防止事後塗改金額的寫法。實作用 class（如 `.upper-slot--struck`）畫線，線色同 olive 印刷墨、橫貫該格；印刷單位字仍需看得見（不要蓋掉或隱藏）。
        - **總計為 0 或空白時九格一律不劃線**（空白表單不該滿排橫線）。
        - 此規則與上一條「不要隱藏空的單位字」並不衝突：格子與單位字都保留，只是多一條槓掉的線。
-6. **註腳**（框內最下）：左小字「※應稅、零稅率、免稅之銷售額應分別開立統一發票，並應於各該欄打「✓」。」；右「第一聯　存根聯」。
+6. **註腳**（框內最下）：
+   - 左側小字（僅三聯式）：「※應稅、零稅率、免稅之銷售額應分別開立統一發票，並應於各該欄打「✓」。」
+     - **二聯式不顯示這句**（2026-07-25 修正）：二聯式版面沒有應稅／零稅率／免稅欄位，印這句是錯的。註腳列仍保留（維持版面高度），左側留空即可——**不要自行編一句看起來像官方用語的二聯式註腳**（無參考圖依據）。
+   - 右側**聯次可選**（`copy-select`，2026-07-25 新增）。依《統一發票使用辦法》：
+     - 三聯式選項：「第一聯　存根聯」「第二聯　扣抵聯」「第三聯　收執聯」
+     - 二聯式選項：「第一聯　存根聯」「第二聯　收執聯」
+     - 預設「第一聯　存根聯」
+     - **切換發票類型時要夾值**：若目前選的聯次在新類型不存在（例如三聯式選了第三聯後切二聯式），夾到該類型的最後一聯（二聯式 → 第二聯　收執聯）
+     - 樣式比照期別下拉（透明底、無框、olive 印刷色、`appearance: none` 加極小箭頭）
+     - **字級必須維持原本聯次印刷字的大小**（`0.95rem`、字距 `0.15em`、`font-weight: 700`），**不可繼承註腳的 0.72rem**——參考圖右下的聯次明顯比左側註腳句更大更粗，而註腳列的高度是由它決定的（繼承會讓整列從 21.3px 縮到 16.1px）。改這裡的字級要同步量測 `.footnote` 高度。
 
 ### 二聯式差異
 
 - 標題「統　一　發　票（二聯式）」；**無統一編號列**（民國日期行仍保留且維持置中，年/月/日皆可填）。
+- 註腳左側的「※應稅、零稅率、免稅…」不顯示；聯次選項只有存根聯與收執聯（見第 6 點）。
 - 金額區只有「總　計」input 列與中文大寫列（無銷售額合計、無營業稅列）。
 - 發票框**外**下方小字：「內含稅額 $X｜銷售額 $Y」（`tax-readonly`、`sales-readonly`）。
 
@@ -91,17 +101,17 @@
 
 ## 5. data-testid 契約（e2e 與元件測試共用）
 
-`tab-triplicate`、`tab-duplicate`、`clear-button`、`period-year-input`、`period-month-select`、`buyer-name-input`、`ubn-input`、`buyer-address-input`、`date-year-input`、`date-month-input`、`date-day-input`、`item-name-N`、`item-qty-N`、`item-price-N`、`item-amount-N`、`item-note-0/1`、`sales-input`、`tax-input`、`total-input`、`tax-mode-taxable/zero/exempt`、`chinese-upper`、（大寫數字）`upper-digit-N`（N = 0～8，由億到元；僅在該位有數字時存在）、（大寫空格橫線槓掉）`upper-struck-N`（N = 0～8；僅該格因高於最高有效位而被橫線槓掉時存在，總計為 0 或空白時不存在）、（二聯式框外）`tax-readonly`、`sales-readonly`。
+`tab-triplicate`、`tab-duplicate`、`clear-button`、`period-year-input`、`period-month-select`、`buyer-name-input`、`ubn-input`、`buyer-address-input`、`date-year-input`、`date-month-input`、`date-day-input`、`item-name-N`、`item-qty-N`、`item-price-N`、`item-amount-N`、`item-note-0/1`、`sales-input`、`tax-input`、`total-input`、`tax-mode-taxable/zero/exempt`、`chinese-upper`、（大寫數字）`upper-digit-N`（N = 0～8，由億到元；僅在該位有數字時存在）、（大寫空格橫線槓掉）`upper-struck-N`（N = 0～8；僅該格因高於最高有效位而被橫線槓掉時存在，總計為 0 或空白時不存在）、（二聯式框外）`tax-readonly`、`sales-readonly`、（註腳右側聯次下拉，2026-07-25 新增）`copy-select`。
 
 ## 6. 清除重填涵蓋範圍
 
-清除時一併重置：買受人名稱／統編／地址、民國日期（年回當年、月日清空）、期別（年回當年、月份回當期）、5 列品項（品名/數量/單價/金額覆寫/備註）、銷售額/稅額/總計、稅制回應稅。發票類型（三聯式／二聯式）維持不變。
+清除時一併重置：買受人名稱／統編／地址、民國日期（年回當年、月日清空）、期別（年回當年、月份回當期）、5 列品項（品名/數量/單價/金額覆寫/備註）、銷售額/稅額/總計、稅制回應稅、**聯次回第一聯　存根聯（2026-07-25 新增）**。發票類型（三聯式／二聯式）維持不變。
 
 ## 7. 測試覆蓋範圍
 
 測試檔集中在 `tests/`：單元／元件測試在 `tests/unit/`（Vitest），端對端測試在 `tests/e2e/`（Playwright）。
 
 - `tests/unit/invoice.test.ts`：`upperDigits`（0、10500、100001、1e8、九位上限、非整數）、`rowAmount`／`rowsTotal`（覆寫優先）、`normalizeMoney`（負數／小數／NaN／Infinity）、`fromSalesByMode`／`fromTotalByMode`／`withTaxOverride`、恆等式全值域掃描、`formatMoney`（整數千分位、小數僅整數部分加逗號、負數、null／非有限數回空字串）、`daysInMonth`／`clampMonthValue`／`clampDayValue`（月份夾 1～12、日夾該月天數、二月依民國年換算西元年判斷閏年 28／29、年或月為 null 時的降級上限）。
-- `tests/unit/InvoiceSheet.test.ts`：固定 5 列、金額覆寫 emit 與 DOM 回寫、稅制 ✓ 切換、三聯／二聯列差異、大寫九格內容與顏色契約、大寫空格橫線槓掉（3570 → 前五格劃線後四格無、0 或空白不劃線）、期別下拉六選項、日期只收數字與合法性驗證（8/32 夾 8/31、換月換年連動重夾）、textarea 自動增高與 ResizeObserver 行為、不 mutate props；金額千分位（focus 顯示純數字、blur 顯示千分位、單價小數千分位只加整數部分、貼上含逗號字串正確解析）；單價編輯中保留使用者打到一半的小數點（不強制清成整數）；單價 `type="text"` 濾除字母等非數字字元、不因此被判為 `null` 而靜默清空（F3）。
-- `tests/unit/App.test.ts`：雙向計算、稅額手動覆寫、零稅率歸零、小數與負數正規化、切二聯式回應稅、清除重填涵蓋範圍。
-- `tests/e2e/invoice.spec.ts`：本節 testid 契約全覆蓋，另含長品名不截斷（含縮放視窗與放大字級）、外框 2px／內線 1px、375px 統編不被裁、tabs 鍵盤操作、大寫空格橫線槓掉的位置與 olive 線色量測、金額千分位 focus／blur 顯示切換、貼上含逗號金額字串解析、民國日期合法性驗證（8/32 夾 8/31、換月換年連動重夾）、**F1 迴歸：鍵盤 Tab 聚焦到已顯示千分位的列金額／單價欄後直接打字，斷言是取代而非附加**、操作全程無 console／page／window error。
+- `tests/unit/InvoiceSheet.test.ts`：固定 5 列、金額覆寫 emit 與 DOM 回寫、稅制 ✓ 切換、三聯／二聯列差異、大寫九格內容與顏色契約、大寫空格橫線槓掉（3570 → 前五格劃線後四格無、0 或空白不劃線）、期別下拉六選項、日期只收數字與合法性驗證（8/32 夾 8/31、換月換年連動重夾）、textarea 自動增高與 ResizeObserver 行為、不 mutate props；金額千分位（focus 顯示純數字、blur 顯示千分位、單價小數千分位只加整數部分、貼上含逗號字串正確解析）；單價編輯中保留使用者打到一半的小數點（不強制清成整數）；單價 `type="text"` 濾除字母等非數字字元、不因此被判為 `null` 而靜默清空（F3）；**註腳（2026-07-25 新增）**：三聯式顯示應稅提示句、二聯式不顯示但註腳列仍存在，`copy-select` 三聯式三選項／二聯式兩選項、預設值、切換 emit、樣式契約（透明底、無框、appearance: none）。
+- `tests/unit/App.test.ts`：雙向計算、稅額手動覆寫、零稅率歸零、小數與負數正規化、切二聯式回應稅、清除重填涵蓋範圍；**聯次（2026-07-25 新增）**：預設第一聯　存根聯、三聯式選第三聯或第二聯後切二聯式皆夾到第二聯　收執聯、選第一聯切換不受影響、清除重填重置回第一聯　存根聯。
+- `tests/e2e/invoice.spec.ts`：本節 testid 契約全覆蓋，另含長品名不截斷（含縮放視窗與放大字級）、外框 2px／內線 1px、375px 統編不被裁、tabs 鍵盤操作、大寫空格橫線槓掉的位置與 olive 線色量測、金額千分位 focus／blur 顯示切換、貼上含逗號金額字串解析、民國日期合法性驗證（8/32 夾 8/31、換月換年連動重夾）、**F1 迴歸：鍵盤 Tab 聚焦到已顯示千分位的列金額／單價欄後直接打字，斷言是取代而非附加**、**註腳與聯次（2026-07-25 新增）：三聯式提示句與三個聯次選項、切二聯式後提示句消失且選項剩兩個、三聯式選扣抵聯後切二聯式夾到收執聯**、操作全程無 console／page／window error。

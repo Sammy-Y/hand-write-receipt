@@ -195,6 +195,45 @@ test('二聯式：無統編、無營業稅列，日期行仍在；數量 1 × �
   expect((await upperCells(page)).slice(5)).toEqual(['壹仟', '零佰', '伍拾', '零元'])
 })
 
+// ---- 6b. 註腳：三聯式提示句／聯次可選（ui-spec §2「註腳」「二聯式差異」） ----
+
+test('註腳：三聯式顯示應稅提示句與三個聯次選項；切二聯式後提示句消失、選項只剩兩個', async ({
+  page,
+}) => {
+  await expect(page.locator('.footnote-rule')).toHaveText(
+    '※應稅、零稅率、免稅之銷售額應分別開立統一發票，並應於各該欄打「✓」。',
+  )
+  await expect(page.getByTestId('copy-select')).toHaveValue('stub')
+
+  const options = await page.getByTestId('copy-select').locator('option').allTextContents()
+  expect(options).toEqual(['第一聯　存根聯', '第二聯　扣抵聯', '第三聯　收執聯'])
+
+  await page.getByTestId('tab-duplicate').click()
+
+  // 二聯式沒有應稅／零稅率／免稅欄位，提示句不該顯示；註腳列仍保留（維持版面高度）
+  await expect(page.locator('.footnote-rule')).toHaveText('')
+  await expect(page.locator('.footnote')).toBeVisible()
+
+  const dupOptions = await page.getByTestId('copy-select').locator('option').allTextContents()
+  expect(dupOptions).toEqual(['第一聯　存根聯', '第二聯　收執聯'])
+})
+
+test('聯次夾值：三聯式選第二聯（扣抵聯）後切二聯式，夾到該類型最後一聯（第二聯　收執聯）', async ({
+  page,
+}) => {
+  await page.getByTestId('copy-select').selectOption('deduction')
+  await expect(page.getByTestId('copy-select')).toHaveValue('deduction')
+
+  await page.getByTestId('tab-duplicate').click()
+
+  await expect(page.getByTestId('copy-select')).toHaveValue('receipt')
+  const selectedText = await page
+    .getByTestId('copy-select')
+    .locator('option:checked')
+    .textContent()
+  expect(selectedText).toBe('第二聯　收執聯')
+})
+
 // ---- 7. 多列品項 ----
 
 test('多列品項：兩列合計正確；清空第 2 列數量後合計恢復', async ({ page }) => {

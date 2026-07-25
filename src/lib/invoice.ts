@@ -7,7 +7,7 @@
  * 保證 銷售額 + 稅額 === 總計，發票上不會出現尾差。
  */
 
-import type { InvoiceItem, TaxMode } from '../types'
+import type { CopyType, InvoiceItem, InvoiceType, TaxMode } from '../types'
 
 export const TAX_RATE = 0.05
 
@@ -247,4 +247,30 @@ export function clampDayValue(
   const max = daysInMonth(rocYear, month)
   const d = Math.trunc(day)
   return Math.min(max, Math.max(1, d))
+}
+
+/**
+ * 聯次選項（依《統一發票使用辦法》，ui-spec §2「註腳」）：
+ * 三聯式第一～三聯為存根聯／扣抵聯／收執聯；二聯式沒有扣抵聯，第二聯即收執聯。
+ */
+export const COPY_OPTIONS: Record<InvoiceType, { value: CopyType; label: string }[]> = {
+  triplicate: [
+    { value: 'stub', label: '第一聯　存根聯' },
+    { value: 'deduction', label: '第二聯　扣抵聯' },
+    { value: 'receipt', label: '第三聯　收執聯' },
+  ],
+  duplicate: [
+    { value: 'stub', label: '第一聯　存根聯' },
+    { value: 'receipt', label: '第二聯　收執聯' },
+  ],
+}
+
+/**
+ * 切換發票類型時的聯次夾值：目前選的聯次在新類型不存在（例如三聯式選了扣抵聯後
+ * 切二聯式），夾到該類型的最後一個選項（二聯式 → 收執聯）；存在則維持不變。
+ */
+export function clampCopyType(copyType: CopyType, invoiceType: InvoiceType): CopyType {
+  const options = COPY_OPTIONS[invoiceType]
+  if (options.some((opt) => opt.value === copyType)) return copyType
+  return options[options.length - 1].value
 }

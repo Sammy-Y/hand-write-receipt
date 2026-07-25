@@ -2,7 +2,7 @@ import { mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
 import InvoiceSheet from '../../src/components/InvoiceSheet.vue'
 import sheetSource from '../../src/components/InvoiceSheet.vue?raw'
-import type { Buyer, InvoiceItem, InvoiceType, TaxMode } from '../../src/types'
+import type { Buyer, CopyType, InvoiceItem, InvoiceType, TaxMode } from '../../src/types'
 
 function emptyItem(overrides: Partial<InvoiceItem> = {}): InvoiceItem {
   return { name: '', quantity: null, unitPrice: null, amount: null, note: '', ...overrides }
@@ -25,6 +25,7 @@ interface SheetProps {
   tax: number
   total: number
   taxMode: TaxMode
+  copyType: CopyType
 }
 
 function mountSheet(overrides: Partial<SheetProps> = {}) {
@@ -41,6 +42,7 @@ function mountSheet(overrides: Partial<SheetProps> = {}) {
     tax: 0,
     total: 0,
     taxMode: 'taxable',
+    copyType: 'stub',
     ...overrides,
   }
   return mount(InvoiceSheet, { props })
@@ -664,6 +666,56 @@ describe('InvoiceSheet（三聯式／二聯式列差異）', () => {
     expect(wrapper.find('[data-testid="date-month-input"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="tax-readonly"]').text()).toBe('內含稅額 $50')
     expect(wrapper.find('[data-testid="sales-readonly"]').text()).toBe('銷售額 $1,000')
+  })
+})
+
+describe('InvoiceSheet（註腳：三聯式專屬提示句與聯次可選，ui-spec §2「註腳」）', () => {
+  function copyOptionTexts(wrapper: Wrapper): string[] {
+    return wrapper
+      .find('[data-testid="copy-select"]')
+      .findAll('option')
+      .map((opt) => opt.text())
+  }
+
+  it('三聯式左側顯示應稅／零稅率／免稅提示句', () => {
+    const wrapper = mountSheet({ invoiceType: 'triplicate' })
+    expect(wrapper.find('.footnote-rule').text()).toContain(
+      '※應稅、零稅率、免稅之銷售額應分別開立統一發票',
+    )
+  })
+
+  it('二聯式左側不顯示提示句，但註腳列仍存在（維持版面高度）', () => {
+    const wrapper = mountSheet({ invoiceType: 'duplicate' })
+    expect(wrapper.find('.footnote-rule').exists()).toBe(true)
+    expect(wrapper.find('.footnote-rule').text()).toBe('')
+    expect(wrapper.text()).not.toContain('應稅、零稅率、免稅')
+  })
+
+  it('三聯式聯次下拉有三個選項：第一聯存根聯／第二聯扣抵聯／第三聯收執聯', () => {
+    const wrapper = mountSheet({ invoiceType: 'triplicate' })
+    expect(copyOptionTexts(wrapper)).toEqual(['第一聯　存根聯', '第二聯　扣抵聯', '第三聯　收執聯'])
+  })
+
+  it('二聯式聯次下拉只有兩個選項：第一聯存根聯／第二聯收執聯', () => {
+    const wrapper = mountSheet({ invoiceType: 'duplicate' })
+    expect(copyOptionTexts(wrapper)).toEqual(['第一聯　存根聯', '第二聯　收執聯'])
+  })
+
+  it('預設值為第一聯　存根聯', () => {
+    const wrapper = mountSheet()
+    expect(fieldValue(wrapper, 'copy-select')).toBe('stub')
+  })
+
+  it('切換聯次會 emit update:copyType', async () => {
+    const wrapper = mountSheet({ invoiceType: 'triplicate' })
+    await wrapper.find('[data-testid="copy-select"]').setValue('deduction')
+    expect(wrapper.emitted('update:copyType')![0]).toEqual(['deduction'])
+  })
+
+  it('樣式契約：聯次下拉透明底、無框、appearance: none', () => {
+    expect(cssRule('.copy-select')).toContain('background: transparent')
+    expect(cssRule('.copy-select')).toContain('border: 0')
+    expect(cssRule('.copy-select')).toContain('appearance: none')
   })
 })
 
