@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <!-- 手寫發票小幫手：米黃紙張 + 橄欖綠印刷格線 + 藍色手寫金額 -->
+  <rect x="4" y="2" width="24" height="28" rx="2.5" fill="#f5f3e7" stroke="#6b6414" stroke-width="2"/>
+  <path d="M5 3.6h22v4.8H5z" fill="#6b6414"/>
+  <g fill="#6b6414">
+    <rect x="8" y="12.4" width="16" height="1.8" rx="0.9"/>
+    <rect x="8" y="17.2" width="16" height="1.8" rx="0.9"/>
+  </g>
+  <rect x="8" y="22.6" width="11" height="3.4" rx="1.2" fill="#1d4ed8"/>
+</svg>
