@@ -3,13 +3,14 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, type ObjectDirecti
 import {
   clampDayValue,
   clampMonthValue,
+  COPY_OPTIONS,
   formatMoney,
   normalizeMoney,
   PERIOD_START_MONTHS,
   rowAmount,
   upperDigits,
 } from '../lib/invoice'
-import type { Buyer, InvoiceItem, InvoiceType, TaxMode } from '../types'
+import type { Buyer, CopyType, InvoiceItem, InvoiceType, TaxMode } from '../types'
 
 const props = defineProps<{
   invoiceType: InvoiceType
@@ -29,6 +30,8 @@ const props = defineProps<{
   tax: number
   total: number
   taxMode: TaxMode
+  /** 註腳右側聯次標示 */
+  copyType: CopyType
 }>()
 
 const emit = defineEmits<{
@@ -43,6 +46,7 @@ const emit = defineEmits<{
   (e: 'update:tax', value: number): void
   (e: 'update:total', value: number): void
   (e: 'update:taxMode', value: TaxMode): void
+  (e: 'update:copyType', value: CopyType): void
 }>()
 
 const isTriplicate = computed(() => props.invoiceType === 'triplicate')
@@ -54,6 +58,13 @@ const PERIOD_OPTIONS = PERIOD_START_MONTHS.map((start) => ({
   value: String(start),
   label: `${ZH_MONTHS[start - 1]}、${ZH_MONTHS[start]}`,
 }))
+
+// ---- 註腳右側聯次下拉（依發票類型限縮選項） ----
+const copyOptions = computed(() => COPY_OPTIONS[props.invoiceType])
+
+function onCopyTypeChange(event: Event) {
+  emit('update:copyType', inputValue(event) as CopyType)
+}
 
 // ---- 品項（固定 5 列） ----
 const rows = computed(() => props.items.slice(0, 5))
@@ -763,10 +774,24 @@ const upperSlots = computed(() =>
       </table>
 
       <div class="footnote">
-        <span class="footnote-rule"
-          >※應稅、零稅率、免稅之銷售額應分別開立統一發票，並應於各該欄打「✓」。</span
+        <!-- 二聯式沒有應稅／零稅率／免稅欄位，這句只在三聯式顯示；
+             左側留空但這一列仍保留，維持版面高度（ui-spec §2「註腳」／「二聯式差異」） -->
+        <span class="footnote-rule">{{
+          isTriplicate
+            ? '※應稅、零稅率、免稅之銷售額應分別開立統一發票，並應於各該欄打「✓」。'
+            : ''
+        }}</span>
+        <select
+          aria-label="聯次"
+          class="copy-select"
+          data-testid="copy-select"
+          :value="copyType"
+          @change="onCopyTypeChange($event)"
         >
-        <span class="copy">第一聯　存根聯</span>
+          <option v-for="opt in copyOptions" :key="opt.value" :value="opt.value">
+            {{ opt.label }}
+          </option>
+        </select>
       </div>
     </div>
 
@@ -1165,11 +1190,44 @@ const upperSlots = computed(() =>
   font-size: 0.72rem;
 }
 
-.copy {
+/* 聯次下拉：樣式比照期別下拉（透明底、無框、olive 印刷色、appearance: none 加極小箭頭），
+   但字級同註腳（0.72rem，繼承自 .footnote），不是期別下拉的印刷字級，
+   且刻意不設 border-bottom（無框）——不得改變註腳列的高度或對齊。 */
+/* 聯次字級刻意大於註腳句（0.95rem 而非繼承 .footnote 的 0.72rem）：
+   參考圖右下「第一聯　存根聯」比左側註腳句明顯更大更粗，且註腳列的高度是由它
+   決定的——用 font: inherit 會讓整列從 21.3px 縮到 16.1px，違反 spec §2.6
+   「不得改變註腳列的高度或對齊」。改字級時請同步量測 .footnote 的高度。 */
+.copy-select {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
   font-size: 0.95rem;
   font-weight: 700;
   letter-spacing: 0.15em;
   white-space: nowrap;
+  text-align: right;
+  padding: 0 0.55em 0 0.15rem;
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 6'%3E%3Cpath d='M0 0h8L4 6z' fill='%236b6414'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.05em center;
+  background-size: 0.4em 0.3em;
+}
+
+.copy-select:hover {
+  background-color: color-mix(in srgb, var(--ink) 8%, var(--paper));
+}
+
+.copy-select:focus {
+  outline: 2px solid color-mix(in srgb, var(--ink) 35%, var(--paper));
+  outline-offset: -2px;
+}
+
+.copy-select option {
+  color: #1a1a1a;
 }
 
 /* 窄螢幕（發票縮到 min-width 640px 時）：日期行獨立成行仍保持置中（spec §2.3），

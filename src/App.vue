@@ -2,6 +2,7 @@
 import { ref } from 'vue'
 import InvoiceSheet from './components/InvoiceSheet.vue'
 import {
+  clampCopyType,
   fromSalesByMode,
   fromTotalByMode,
   periodStartMonth,
@@ -10,7 +11,7 @@ import {
   withTaxOverride,
   type TaxBreakdown,
 } from './lib/invoice'
-import type { Buyer, InvoiceItem, InvoiceType, TaxMode } from './types'
+import type { Buyer, CopyType, InvoiceItem, InvoiceType, TaxMode } from './types'
 
 const ITEM_ROWS = 5
 
@@ -49,6 +50,8 @@ const sales = ref(0)
 const tax = ref(0)
 const total = ref(0)
 const taxMode = ref<TaxMode>('taxable')
+// 註腳右側聯次標示；預設第一聯　存根聯（ui-spec §2「註腳」）
+const copyType = ref<CopyType>('stub')
 
 /**
  * 金額三欄一律經由 invoice.ts 的純函式寫入（內含 normalizeMoney）：
@@ -108,6 +111,10 @@ function selectInvoiceType(type: InvoiceType) {
   const sum = rowsTotal(items.value)
   if (sum > 0) applyItemsSum(sum)
   else if (restoredTaxable) cascadeFromTotal(total.value)
+
+  // 聯次夾值（ui-spec §2「註腳」）：目前選的聯次在新類型不存在（如三聯式選了
+  // 扣抵聯後切二聯式）就夾到新類型的最後一聯。
+  copyType.value = clampCopyType(copyType.value, type)
 }
 
 function clearAll() {
@@ -122,6 +129,7 @@ function clearAll() {
   tax.value = 0
   total.value = 0
   taxMode.value = 'taxable'
+  copyType.value = 'stub'
 }
 </script>
 
@@ -179,6 +187,7 @@ function clearAll() {
           :tax="tax"
           :total="total"
           :tax-mode="taxMode"
+          :copy-type="copyType"
           @update:period-year="periodYear = $event"
           @update:period-month="periodMonth = $event"
           @update:buyer="buyer = $event"
@@ -190,6 +199,7 @@ function clearAll() {
           @update:tax="onTaxUpdate"
           @update:total="cascadeFromTotal"
           @update:taxMode="onTaxModeUpdate"
+          @update:copyType="copyType = $event"
         />
       </div>
 

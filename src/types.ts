@@ -21,3 +21,11 @@ export interface InvoiceItem {
 
 /** 課稅別：應稅／零稅率／免稅 */
 export type TaxMode = 'taxable' | 'zeroRate' | 'exempt'
+
+/**
+ * 聯次（《統一發票使用辦法》）：
+ * - stub＝存根聯（三聯式／二聯式皆為第一聯）
+ * - deduction＝扣抵聯（僅三聯式，第二聯）
+ * - receipt＝收執聯（三聯式第三聯／二聯式第二聯）
+ */
+export type CopyType = 'stub' | 'deduction' | 'receipt'

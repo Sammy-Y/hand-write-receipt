@@ -334,6 +334,37 @@ describe('App（期別年與民國日期只收數字）', () => {
   })
 })
 
+describe('App（聯次：ui-spec §2「註腳」）', () => {
+  it('預設第一聯　存根聯', () => {
+    const wrapper = mount(App)
+    expect(inputValue(wrapper, 'copy-select')).toBe('stub')
+  })
+
+  it('三聯式選第三聯（收執聯）後切二聯式：夾到第二聯　收執聯', async () => {
+    const wrapper = mount(App)
+    await wrapper.find('[data-testid="copy-select"]').setValue('receipt')
+    expect(inputValue(wrapper, 'copy-select')).toBe('receipt')
+
+    await wrapper.find('[data-testid="tab-duplicate"]').trigger('click')
+    expect(inputValue(wrapper, 'copy-select')).toBe('receipt')
+    expect(wrapper.find('[data-testid="copy-select"]').text()).toContain('第二聯　收執聯')
+  })
+
+  it('三聯式選第二聯（扣抵聯）後切二聯式：夾到二聯式最後一聯（第二聯　收執聯）', async () => {
+    const wrapper = mount(App)
+    await wrapper.find('[data-testid="copy-select"]').setValue('deduction')
+
+    await wrapper.find('[data-testid="tab-duplicate"]').trigger('click')
+    expect(inputValue(wrapper, 'copy-select')).toBe('receipt')
+  })
+
+  it('選第一聯（存根聯）後切二聯式不受夾值影響', async () => {
+    const wrapper = mount(App)
+    await wrapper.find('[data-testid="tab-duplicate"]').trigger('click')
+    expect(inputValue(wrapper, 'copy-select')).toBe('stub')
+  })
+})
+
 describe('App（清除重填）', () => {
   async function fillEverything(wrapper: Wrapper) {
     await wrapper.find('[data-testid="period-year-input"]').setValue('120')
@@ -351,6 +382,7 @@ describe('App（清除重填）', () => {
     await wrapper.find('[data-testid="item-note-1"]').setValue('第二列備註')
     await wrapper.find('[data-testid="item-amount-1"]').setValue('300')
     await wrapper.find('[data-testid="tax-mode-exempt"]').trigger('click')
+    await wrapper.find('[data-testid="copy-select"]').setValue('receipt')
   }
 
   it('清除後買受人、品項、金額全部歸零，稅制回應稅', async () => {
@@ -382,6 +414,7 @@ describe('App（清除重填）', () => {
     expect(wrapper.find('[data-testid="tax-mode-taxable"]').text()).toBe('✓')
     expect(wrapper.find('[data-testid="tax-mode-exempt"]').text()).toBe('')
     expect(upperSlots(wrapper)).toEqual(['億', '仟', '佰', '拾', '萬', '仟', '佰', '拾', '元'])
+    expect(inputValue(wrapper, 'copy-select')).toBe('stub')
   })
 
   it('清除後期別（年／月份）與民國日期年份回到系統日期預設', async () => {

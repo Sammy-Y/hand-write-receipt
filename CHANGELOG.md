@@ -2,6 +2,21 @@
 
 本檔案記錄本專案所有重要變更，格式參考 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/)，版號遵循 [語意化版本](https://semver.org/lang/zh-TW/)。章節標頭沿用 Keep a Changelog 的英文標準：`Added`、`Changed`、`Deprecated`、`Removed`、`Fixed`、`Security`。
 
+## [Unreleased]
+
+### Added
+
+- 發票右下角的聯次標示改為可選（`copy-select`），依《統一發票使用辦法》：三聯式提供「第一聯　存根聯」「第二聯　扣抵聯」「第三聯　收執聯」，二聯式提供「第一聯　存根聯」「第二聯　收執聯」；預設「第一聯　存根聯」。切換發票類型時若目前選的聯次在新類型不存在（例如三聯式選了扣抵聯後切二聯式），會自動夾到該類型的最後一聯；「清除重填」也會把聯次重置回第一聯　存根聯。樣式比照期別下拉（透明底、無框、olive 印刷色、appearance: none 加極小箭頭），不影響註腳列的高度與對齊。
+
+### Fixed
+
+- 二聯式不再誤植三聯式專屬的「※應稅、零稅率、免稅之銷售額應分別開立統一發票…」註腳——二聯式版面本來就沒有應稅／零稅率／免稅欄位，印這句是錯的。二聯式左側現在留空，註腳列仍保留以維持版面高度。
+- 聯次改成下拉後字級誤繼承註腳的 0.72rem，使註腳列高度從 21.3px 縮成 16.1px、與參考圖「聯次比註腳句更大更粗」不符；已改回 0.95rem／字距 0.15em，註腳列高度回復原值。
+
+### Changed
+
+- CI：新增 GitHub Actions workflow，在推送 `main` 與對 `main` 開 PR 時自動跑型別檢查、Vitest、production build 與 Playwright e2e；e2e 失敗會上傳 HTML 報告當 artifact。Playwright 在 CI 環境額外產出 html 報告並重試一次（讓 trace 真的產生），本機行為不變。
+
 ## [1.1.0] - 2026-07-25
 
 ### Added
