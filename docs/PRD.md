@@ -155,7 +155,7 @@
 | 單元／元件測試 | Vitest + @vue/test-utils（happy-dom） |
 | e2e 測試 | Playwright（Chromium） |
 | 型別檢查 | `vue-tsc -b`（併入 `npm run build`） |
-| Node | 見 `.nvmrc`（22） |
+| Node | 22.x（要求寫在 `package.json` 的 `engines.node`，本機／CI／Vercel 共用同一來源） |
 | 部署 | 靜態託管（**尚未進行**） |
 
 ### 元件架構
