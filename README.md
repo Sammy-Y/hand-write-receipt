@@ -27,7 +27,9 @@
 
 ## 開發
 
-需要 Node.js（版本見 `.nvmrc`）。
+需要 **Node.js 22.x**（Vite 8 要求 22.12 以上）。版本要求寫在 `package.json` 的
+`engines.node`，本機、CI 與 Vercel 都以它為準——沒有 `.nvmrc`，改版號只需要改那一處。
+用 nvm 的話可以跑 `nvm install 22 && nvm use 22`。
 
 ```bash
 npm install

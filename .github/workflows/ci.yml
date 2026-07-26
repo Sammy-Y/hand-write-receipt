@@ -28,7 +28,8 @@ jobs:
       - name: 設定 Node.js
         uses: actions/setup-node@v4
         with:
-          node-version-file: .nvmrc
+          # Node 版本的單一來源：package.json 的 engines.node
+          node-version-file: package.json
           cache: npm
 
       - name: 安裝相依套件
